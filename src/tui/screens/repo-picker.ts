@@ -1,4 +1,4 @@
-import { Box, Select, SelectRenderableEvents, Text, type SelectOption } from "@opentui/core"
+import { Box, Text, type SelectOption } from "@opentui/core"
 import { AppFrame, theme } from "../layout"
 
 export type RepoPickerOption = SelectOption & { value: string }
@@ -11,25 +11,31 @@ export function buildRepoPickerOptions(paths: string[]): RepoPickerOption[] {
   }))
 }
 
-export function RepoPickerScreen(paths: string[], onSelect: (repoPath: string) => void, error?: string) {
-  const picker = Select({
-    height: Math.max(4, Math.min(paths.length + 2, 10)),
-    width: "100%",
-    options: buildRepoPickerOptions(paths),
-    showDescription: true,
-    wrapSelection: true,
-    selectedBackgroundColor: "#35424a",
-    selectedTextColor: theme.accent,
-    descriptionColor: theme.muted,
-  })
-
-  picker.on(SelectRenderableEvents.ITEM_SELECTED, (_index: number, option: RepoPickerOption) => onSelect(option.value))
-  picker.focus()
+export function RepoPickerScreen(paths: string[], query: string, selectedIndex: number, error?: string) {
+  const start = visibleWindowStart(paths.length, selectedIndex, 10)
+  const visible = buildRepoPickerOptions(paths).slice(start, start + 10)
 
   return AppFrame(
     "Select Repository",
-    Text({ content: "Choose a repository to validate. Pass --repo <path> to skip this screen.", fg: theme.muted }),
-    Box({ borderStyle: "single", borderColor: theme.border, padding: 1 }, picker),
+    Text({ content: "Search repositories by path or folder name. Pass --repo <path> to skip this screen.", fg: theme.muted }),
+    Text({ content: `Search: ${query || "(type to filter)"}`, fg: theme.accent }),
+    Box(
+      { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
+      ...(visible.length > 0
+        ? visible.map((option, index) => {
+          const absoluteIndex = start + index
+          return Text({ content: `${absoluteIndex === selectedIndex ? ">" : " "} ${option.name}`, fg: absoluteIndex === selectedIndex ? theme.accent : theme.text })
+        })
+        : [Text({ content: "No repositories match the current search", fg: theme.muted })]),
+    ),
+    Text({ content: "type: search  backspace: delete  enter: open selected repo  escape: exit prompt", fg: theme.muted }),
     Text({ content: error ?? "", fg: theme.danger }),
   )
+}
+
+function visibleWindowStart(total: number, selectedIndex: number, limit: number): number {
+  if (total <= limit) return 0
+  if (selectedIndex < 0) return 0
+  if (selectedIndex >= total) return Math.max(0, total - limit)
+  return Math.min(Math.max(0, selectedIndex - limit + 1), Math.max(0, total - limit))
 }

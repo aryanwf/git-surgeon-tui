@@ -3,6 +3,8 @@ import type { RepositoryState } from "../git/repository"
 import type { ChangeCommitAuthorPreview } from "../git/author"
 import type { ChangeCommitDatePreview } from "../git/date"
 import type { DropCommitPreview } from "../git/drop"
+import type { DateChangeMode } from "../git/date"
+import type { HistoryEditPreview } from "../git/history-plan"
 import type { SplitCommitPreview } from "../git/split"
 import type { VisualRebaseAction, VisualRebasePreview } from "../git/rebase"
 import type { RenamePreview } from "../git/reword"
@@ -19,11 +21,14 @@ export type AppScreen =
   | "rewrite-drop"
   | "rewrite-author"
   | "rewrite-date"
+  | "rewrite-history-list"
   | "rewrite-split"
   | "rewrite-visual-rebase"
   | "conflict"
 
 export type RewriteStep = "form" | "preview" | "applying" | "result"
+
+export type HistoryListEditStep = "form" | "dirty" | "preview" | "upstream-confirm" | "applying" | "result"
 
 // Drop commit uses "confirm" instead of "form" since there are no inputs.
 export type DropStep = "confirm" | "preview" | "applying" | "result"
@@ -108,6 +113,33 @@ export type VisualRebaseTodoRow = {
   command?: string
 }
 
+export type HistoryEditDraft = {
+  sha: string
+  shortSha: string
+  subject: string
+  authorDate: string
+  message?: string
+  drop?: boolean
+  date?: string
+  dateMode?: DateChangeMode
+}
+
+export type HistoryListEditState = {
+  type: "history-list"
+  step: HistoryListEditStep
+  rows?: HistoryEditDraft[]
+  selectedRowIndex: number
+  activeField: "list" | "message" | "date"
+  previewPane: "oldGraph" | "newGraph" | "metadata" | "todo" | "diff"
+  previewScrollOffset: number
+  upstreamConfirmation: string
+  stashedRef?: string
+  preview?: HistoryEditPreview
+  backupRef?: string
+  operationLogPath?: string
+  error?: string
+}
+
 export type SplitCommitPartDraft = {
   message: string
 }
@@ -148,6 +180,7 @@ export type RewriteFlowState =
   | RewriteDropState
   | RewriteAuthorState
   | RewriteDateState
+  | HistoryListEditState
   | SplitCommitState
   | VisualRebaseState
 
@@ -159,6 +192,7 @@ export type AppState = {
   commandLog: string[]
   historyQuery: string
   selectedCommitIndex: number
+  historyScrollOffset: number
   // Populated during history screen render so rewrite flow triggers have the commit data.
   lastSelectedCommit?: CommitSummary
   rewriteFlow?: RewriteFlowState

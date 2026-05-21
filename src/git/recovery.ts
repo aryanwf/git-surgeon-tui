@@ -71,6 +71,20 @@ export async function scanDanglingObjects(repoPath: string): Promise<DanglingObj
   }))
 }
 
+export async function createRecoveryBranch(repoPath: string, backupRef: string, branchName?: string): Promise<string> {
+  validateBackupRef(backupRef)
+  const short = (await runGitChecked({ repoPath, args: ["rev-parse", "--short", backupRef] })).stdout.trim()
+  const name = branchName ?? `gitsurgeon-recovery-${short}`
+  await runGitChecked({ repoPath, args: ["branch", name, backupRef] })
+  return name
+}
+
+export async function guardedResetBranchToBackup(repoPath: string, backupRef: string, confirmation: string): Promise<void> {
+  validateBackupRef(backupRef)
+  if (confirmation !== `reset to ${backupRef}`) throw new Error(`Confirmation must match: reset to ${backupRef}`)
+  await runGitChecked({ repoPath, args: ["reset", "--hard", backupRef] })
+}
+
 export function parseReflog(output: string): ReflogEntry[] {
   return output
     .split("\x1e")
@@ -101,4 +115,8 @@ export function parseDanglingObjects(output: string): DanglingObject[] {
     objects.set(match[2], { objectType: match[1], sha: match[2] })
   }
   return Array.from(objects.values())
+}
+
+function validateBackupRef(ref: string): void {
+  if (!ref.startsWith("refs/gitsurgeon/backups/")) throw new Error(`Ref is not a Git Surgeon backup ref: ${ref}`)
 }

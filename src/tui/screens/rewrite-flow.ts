@@ -1,6 +1,6 @@
 import { Box, Text } from "@opentui/core"
 import type { RepositoryState } from "../../git/repository"
-import type { RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState, VisualRebaseTodoRow } from "../../state/types"
+import type { HistoryEditDraft, HistoryListEditState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState, VisualRebaseTodoRow } from "../../state/types"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -352,6 +352,147 @@ function DateResultScreen(state: RepositoryState, flow: RewriteDateState) {
 
 
 
+// List-Based History Edit
+
+export function HistoryListEditFlowScreen(state: RepositoryState, flow: HistoryListEditState) {
+  if (flow.step === "dirty") return HistoryListDirtyScreen(state, flow)
+  if (flow.step === "preview") return HistoryListPreviewScreen(state, flow)
+  if (flow.step === "upstream-confirm") return HistoryListUpstreamConfirmScreen(state, flow)
+  if (flow.step === "applying") return ApplyingScreen(state, "Applying combined history edit...")
+  if (flow.step === "result") return HistoryListResultScreen(state, flow)
+  return HistoryListFormScreen(state, flow)
+}
+
+function HistoryListFormScreen(state: RepositoryState, flow: HistoryListEditState) {
+  const rows = flow.rows ?? []
+  const selected = rows[flow.selectedRowIndex]
+  const dropCount = rows.filter((row) => row.drop).length
+  const changedCount = rows.filter((row) => row.drop || row.message !== undefined || row.date !== undefined).length
+  const descendantCount = firstDropDescendants(rows).length
+  return AppFrame(
+    "List History Edit",
+    Box(
+      { flexDirection: "column", gap: 1, flexGrow: 1 },
+      Box(
+        { flexDirection: "row", gap: 1, flexGrow: 1 },
+        Box(
+          { flexDirection: "column", width: "62%", borderStyle: "single", borderColor: theme.border, padding: 1 },
+          Text({ content: `Commits newest to oldest (${rows.length})`, fg: theme.accent }),
+          ...historyEditRows(rows, flow.selectedRowIndex),
+        ),
+        Box(
+          { flexDirection: "column", flexGrow: 1, borderStyle: "single", borderColor: flow.activeField === "list" ? theme.border : theme.accent, padding: 1 },
+          Text({ content: selected ? `${selected.shortSha} ${truncate(selected.subject, 68)}` : "Loading commits...", fg: theme.accent }),
+          ...(selected ? historyEditDetails(selected, flow.activeField) : [Text({ content: "Preparing editable history list.", fg: theme.muted })]),
+          Text({ content: "", fg: theme.muted }),
+          Text({ content: `Pending edits: ${changedCount}   drops: ${dropCount}`, fg: changedCount > 0 ? theme.ok : theme.muted }),
+          ...(dropCount > 0 ? [Text({ content: `${descendantCount} descendant commit(s) will be rewritten after the oldest drop.`, fg: theme.danger })] : []),
+        ),
+      ),
+      ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
+    ),
+    Text({ content: "j/k: select  w: edit msg  t: edit date  x: drop  c: clear row  enter: preview", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+function HistoryListDirtyScreen(state: RepositoryState, flow: HistoryListEditState) {
+  return AppFrame(
+    "Dirty Worktree",
+    Box(
+      { flexDirection: "column", gap: 1, flexGrow: 1 },
+      Box(
+        { flexDirection: "column", borderStyle: "single", borderColor: theme.danger, padding: 1 },
+        Text({ content: "The worktree or index has local changes.", fg: theme.danger }),
+        Text({ content: "Choose how to handle them before the scratch preview runs.", fg: theme.text }),
+      ),
+      Text({ content: "s: stash local changes with git stash push -u", fg: theme.text }),
+      Text({ content: "m: commit manually and return to history", fg: theme.text }),
+      Text({ content: "c/escape: cancel", fg: theme.text }),
+      ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
+    ),
+    StatusBar(state),
+  )
+}
+
+function HistoryListPreviewScreen(state: RepositoryState, flow: HistoryListEditState) {
+  const p = flow.preview
+  const pane = previewPaneContent(flow)
+  const lines = pane.content.split("\n").filter((line) => line.trim() !== "")
+  const visible = lines.slice(flow.previewScrollOffset, flow.previewScrollOffset + 18)
+  return AppFrame(
+    "List History Edit Preview",
+    Box(
+      { flexDirection: "column", gap: 1, flexGrow: 1 },
+      Box(
+        { flexDirection: "row", gap: 1 },
+        ...(["oldGraph", "newGraph", "metadata", "todo", "diff"] as const).map((name) => Text({ content: ` ${name} `, fg: flow.previewPane === name ? theme.accent : theme.muted })),
+      ),
+      Box(
+        { flexDirection: "column", flexGrow: 1, borderStyle: "single", borderColor: theme.border, padding: 1 },
+        Text({ content: pane.title, fg: theme.accent }),
+        ...(p ? visible.map((line) => Text({ content: truncate(line, 110), fg: previewLineColor(line) })) : [Text({ content: "Computing scratch preview...", fg: theme.muted })]),
+      ),
+      ...(p ? [Text({ content: `Affected commits: ${p.changedCommitCount}   dropped: ${p.droppedCommitIds.length}   scroll: ${flow.previewScrollOffset + 1}/${Math.max(1, lines.length)}`, fg: theme.muted })] : []),
+      ...(p ? oldToNewLines(p.oldToNew) : []),
+      warningsBox(p?.warnings ?? []),
+      ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
+    ),
+    Text({ content: "tab: pane  j/k: scroll  enter: apply after preview succeeds  escape: cancel", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+function HistoryListUpstreamConfirmScreen(state: RepositoryState, flow: HistoryListEditState) {
+  const phrase = `rewrite ${state.branch}`
+  return AppFrame(
+    "Published History Confirmation",
+    Box(
+      { flexDirection: "column", gap: 1, flexGrow: 1 },
+      Box(
+        { flexDirection: "column", borderStyle: "single", borderColor: theme.danger, padding: 1 },
+        Text({ content: `Current branch tracks ${state.upstream}.`, fg: theme.danger }),
+        Text({ content: "This applies a local rewrite only. Git Surgeon will not push or force-push.", fg: theme.text }),
+        Text({ content: `Type exactly: ${phrase}`, fg: theme.accent }),
+      ),
+      Text({ content: `${flow.upstreamConfirmation}|`, fg: theme.text }),
+      ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
+    ),
+    Text({ content: "type phrase  enter: apply  escape: cancel", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+function HistoryListResultScreen(state: RepositoryState, flow: HistoryListEditState) {
+  if (flow.error) {
+    return AppFrame(
+      "List History Edit Failed",
+      Box(
+        { flexDirection: "column", gap: 1 },
+        Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
+        ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
+      ),
+      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      StatusBar(state),
+    )
+  }
+  return AppFrame(
+    "List History Edit Applied",
+    Box(
+      { flexDirection: "column", gap: 1 },
+      Text({ content: "Combined history edit applied successfully.", fg: theme.ok }),
+      ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
+      ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
+      ...(flow.stashedRef ? [Text({ content: `Local changes were stashed: ${flow.stashedRef}`, fg: theme.muted })] : []),
+      Text({ content: "Recovery: create a branch from the backup ref or reset to it from the Recovery Viewer.", fg: theme.muted }),
+    ),
+    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+
+
 // Split Commit
 
 export function SplitCommitFlowScreen(state: RepositoryState, flow: SplitCommitState) {
@@ -623,6 +764,70 @@ function splitPartSummary(paths: string[], flow: SplitCommitState) {
     const label = part.message.trim() || "(empty message)"
     return Text({ content: `${prefix} part ${index + 1}: ${count} file(s) - ${truncate(label, 44)}`, fg: index === flow.selectedPartIndex ? theme.accent : theme.muted })
   })
+}
+
+function historyEditRows(rows: HistoryEditDraft[], selectedIndex: number) {
+  if (rows.length === 0) return [Text({ content: "No commits found", fg: theme.muted })]
+  const start = visibleWindowStart(rows.length, selectedIndex, 15)
+  return rows.slice(start, start + 15).map((row, visibleIndex) => {
+    const index = start + visibleIndex
+    const selected = index === selectedIndex
+    return Text({ content: `${selected ? ">" : " "} ${String(index + 1).padStart(4)} ${row.shortSha.padEnd(9)} ${rowStatus(row).padEnd(14)} ${truncate(row.subject, 38)}`, fg: selected ? theme.accent : row.drop ? theme.danger : theme.text })
+  })
+}
+
+function historyEditDetails(row: HistoryEditDraft, activeField: "list" | "message" | "date") {
+  return [
+    Text({ content: `Subject: ${truncate(row.subject, 74)}`, fg: theme.text }),
+    Text({ content: `Message: ${truncate(row.message ?? row.subject, 74)}${activeField === "message" ? "|" : ""}`, fg: activeField === "message" ? theme.accent : theme.muted }),
+    Text({ content: `Date:    ${row.date ?? row.authorDate}${activeField === "date" ? "|" : ""}`, fg: activeField === "date" ? theme.accent : theme.muted }),
+    Text({ content: `Mode:    ${row.dateMode ?? "both"}`, fg: row.date ? theme.text : theme.muted }),
+    Text({ content: `Status:  ${rowStatus(row)}`, fg: row.drop ? theme.danger : rowStatus(row) === "pick" ? theme.muted : theme.ok }),
+  ]
+}
+
+function rowStatus(row: HistoryEditDraft): string {
+  if (row.drop) return "drop"
+  const statuses = []
+  if (row.message !== undefined) statuses.push("reword")
+  if (row.date !== undefined) statuses.push(`date:${row.dateMode ?? "both"}`)
+  return statuses.length === 0 ? "pick" : statuses.join("+")
+}
+
+function visibleWindowStart(total: number, selectedIndex: number, limit: number): number {
+  if (total <= limit) return 0
+  return Math.min(Math.max(0, selectedIndex - Math.floor(limit / 2)), Math.max(0, total - limit))
+}
+
+function firstDropDescendants(rows: HistoryEditDraft[]): HistoryEditDraft[] {
+  const oldestDrop = rows.reduce((oldest, row, index) => row.drop ? Math.max(oldest, index) : oldest, -1)
+  return oldestDrop < 0 ? [] : rows.slice(0, oldestDrop)
+}
+
+function previewPaneContent(flow: HistoryListEditState): { title: string; content: string } {
+  const p = flow.preview
+  if (!p) return { title: "Preview", content: "" }
+  if (flow.previewPane === "oldGraph") return { title: "Old Graph", content: p.oldGraph }
+  if (flow.previewPane === "newGraph") return { title: "New Graph", content: p.newGraph }
+  if (flow.previewPane === "metadata") return { title: "Metadata", content: `Before\n${p.oldMetadata}\n\nAfter\n${p.newMetadata}` }
+  if (flow.previewPane === "todo") return { title: "Generated Rebase Todo", content: p.todo }
+  return { title: "Final Diff", content: p.finalDiffPatch || p.finalDiffStat || "(no final tree diff)" }
+}
+
+function previewLineColor(line: string): string {
+  if (line.startsWith("+")) return theme.ok
+  if (line.startsWith("-")) return theme.danger
+  if (line.startsWith("@@")) return theme.accent
+  return theme.text
+}
+
+function oldToNewLines(oldToNew: Record<string, string>) {
+  const entries = Object.entries(oldToNew)
+  if (entries.length === 0) return [Text({ content: "Old-to-new mapping: (not discoverable for this plan)", fg: theme.muted })]
+  return [
+    Text({ content: "Old-to-new mapping:", fg: theme.accent }),
+    ...entries.slice(0, 3).map(([oldSha, newSha]) => Text({ content: `  ${oldSha.slice(0, 10)} -> ${newSha.slice(0, 10)}`, fg: theme.muted })),
+  ]
 }
 
 function truncate(value: string, maxLength: number): string {

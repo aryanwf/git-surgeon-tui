@@ -4,16 +4,19 @@ import type { RepositoryState } from "../../git/repository"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
-export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], selectedIndex: number, query: string, diff: string) {
+export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], selectedIndex: number, scrollOffset: number, query: string, diff: string) {
   const selected = commits[selectedIndex]
+  const visibleLimit = 18
+  const visibleStart = visibleWindowStart(commits.length, selectedIndex, scrollOffset, visibleLimit)
+  const visibleEnd = Math.min(commits.length, visibleStart + visibleLimit)
   return AppFrame(
     "History And Diff",
-    Text({ content: `Filter: ${query || "(type to search)"}`, fg: theme.muted }),
+    Text({ content: `Filter: ${query || "(type to search)"}   ${commits.length} commit(s)   showing ${commits.length === 0 ? 0 : visibleStart + 1}-${visibleEnd}`, fg: theme.muted }),
     Box(
       { flexDirection: "row", gap: 1, flexGrow: 1 },
       Box(
         { flexDirection: "column", width: "42%", borderStyle: "single", borderColor: theme.border, padding: 1 },
-        ...formatCommitRows(commits, selectedIndex).map((line) => Text({ content: line.content, fg: line.selected ? theme.accent : theme.text })),
+        ...formatCommitRows(commits, selectedIndex, visibleStart, visibleLimit).map((line) => Text({ content: line.content, fg: line.selected ? theme.accent : theme.text })),
       ),
       Box(
         { flexDirection: "column", flexGrow: 1, borderStyle: "single", borderColor: theme.border, padding: 1 },
@@ -21,17 +24,28 @@ export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], 
         ...previewLines(diff, 24).map((line) => Text({ content: line, fg: lineColor(line) })),
       ),
     ),
-    Text({ content: "j/k: select  type: filter  w: reword  d: drop  s: split  a: author  t: date  i: rebase  b: dashboard", fg: theme.muted }),
+    Text({ content: "j/k: select  pgup/pgdn: jump  type: filter  m: list edit  w/d/a/t/s/i: single flows  b: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
 
-export function formatCommitRows(commits: CommitSummary[], selectedIndex: number): { content: string; selected: boolean }[] {
+export function formatCommitRows(commits: CommitSummary[], selectedIndex: number, scrollOffset = 0, limit = 18): { content: string; selected: boolean }[] {
   if (commits.length === 0) return [{ content: "No commits match the current filter", selected: false }]
-  return commits.slice(0, 18).map((commit, index) => ({
-    content: `${index === selectedIndex ? ">" : " "} ${commit.shortSha.padEnd(9)} ${commit.authorDate.slice(0, 10)} ${truncate(commit.subject, 48)}`,
+  const start = visibleWindowStart(commits.length, selectedIndex, scrollOffset, limit)
+  return commits.slice(start, start + limit).map((commit, visibleIndex) => {
+    const index = start + visibleIndex
+    return {
+    content: `${index === selectedIndex ? ">" : " "} ${String(index + 1).padStart(4)} ${commit.shortSha.padEnd(9)} ${commit.authorDate.slice(0, 10)} ${truncate(commit.subject, 43)}`,
     selected: index === selectedIndex,
-  }))
+    }
+  })
+}
+
+export function visibleWindowStart(total: number, selectedIndex: number, scrollOffset: number, limit: number): number {
+  if (total <= limit) return 0
+  if (selectedIndex < scrollOffset) return selectedIndex
+  if (selectedIndex >= scrollOffset + limit) return selectedIndex - limit + 1
+  return Math.min(Math.max(0, scrollOffset), Math.max(0, total - limit))
 }
 
 function previewLines(value: string, limit: number): string[] {

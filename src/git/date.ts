@@ -220,7 +220,7 @@ function validateDateChangeMode(mode: string): asserts mode is DateChangeMode {
   if (mode !== "author" && mode !== "committer" && mode !== "both") throw new Error(`Unsupported date mode: ${mode}`)
 }
 
-function normalizeIsoDate(date: string): string {
+export function normalizeIsoDate(date: string): string {
   const timestamp = Date.parse(date)
   if (Number.isNaN(timestamp)) throw new Error("Date must be a valid ISO 8601 timestamp")
   if (!/[zZ]|[+-]\d\d:?\d\d$/.test(date)) throw new Error("Date must include a timezone offset")

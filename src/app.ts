@@ -4,17 +4,19 @@ import { changeCommitAuthor, validateAuthorInput } from "./git/author"
 import { getConflictReport, rebaseAbort, rebaseContinue, rebaseSkip } from "./git/conflict"
 import { changeOldCommitDate } from "./git/date"
 import { dropSingleCommit } from "./git/drop"
+import { editCommitHistory, type HistoryEditOperation } from "./git/history-plan"
 import { getCommitDiff, listCommits, searchCommits } from "./git/log"
 import { buildHistoryPreview, withScratchClone } from "./git/preview"
 import { visualInteractiveRebase, type VisualRebaseAction, type VisualRebaseRow } from "./git/rebase"
 import { validateRepository } from "./git/repository"
 import { exportLatestOperationReport } from "./git/report"
-import { getRecoveryReport } from "./git/recovery"
+import { createRecoveryBranch, getRecoveryReport } from "./git/recovery"
 import { renameOldCommitMessages } from "./git/reword"
+import { runGitChecked } from "./git/runner"
 import { analyzeRepositorySize } from "./git/size-analyzer"
 import { getSplitCommitDetails, splitSingleCommit, type SplitCommitPart } from "./git/split"
-import { createInitialState, startAuthorFlow, startDateFlow, startDropFlow, startRewordFlow, startSplitFlow, startVisualRebaseFlow } from "./state/store"
-import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState, VisualRebaseTodoRow } from "./state/types"
+import { createInitialState, startAuthorFlow, startDateFlow, startDropFlow, startHistoryListEditFlow, startRewordFlow, startSplitFlow, startVisualRebaseFlow } from "./state/store"
+import type { AppState, HistoryEditDraft, HistoryListEditState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState, VisualRebaseTodoRow } from "./state/types"
 import { DashboardScreen } from "./tui/screens/dashboard"
 import { HistoryScreen } from "./tui/screens/history"
 import { HelpScreen } from "./tui/screens/help"
@@ -25,6 +27,7 @@ import {
   ChangeAuthorFlowScreen,
   ChangeDateFlowScreen,
   DropCommitFlowScreen,
+  HistoryListEditFlowScreen,
   RewordFlowScreen,
   SplitCommitFlowScreen,
   VisualRebaseFlowScreen,
@@ -57,11 +60,12 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         }
 
         if (state.screen === "history") {
-          const commits = await searchCommits(repository.repoPath, { query: state.historyQuery, limit: 50 })
+          const commits = await searchCommits(repository.repoPath, { query: state.historyQuery })
           const selectedIndex = clamp(state.selectedCommitIndex, 0, Math.max(0, commits.length - 1))
+          const scrollOffset = visibleWindowStart(commits.length, selectedIndex, state.historyScrollOffset, 18)
           const diff = commits[selectedIndex] ? await getCommitDiff(repository.repoPath, commits[selectedIndex].sha) : ""
-          state = { ...state, selectedCommitIndex: selectedIndex, lastSelectedCommit: commits[selectedIndex] }
-          renderer.root.add(HistoryScreen(repository, commits, selectedIndex, state.historyQuery, diff))
+          state = { ...state, selectedCommitIndex: selectedIndex, historyScrollOffset: scrollOffset, lastSelectedCommit: commits[selectedIndex] }
+          renderer.root.add(HistoryScreen(repository, commits, selectedIndex, scrollOffset, state.historyQuery, diff))
         } else if (state.screen === "size-analyzer") {
           const result = await analyzeRepositorySize({ repoPath: repository.repoPath, limit: 20 })
           renderer.root.add(SizeAnalyzerScreen(repository, result))
@@ -250,6 +254,35 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             return
           }
           renderer.root.add(ChangeDateFlowScreen(repository, flow))
+        } else if (state.screen === "rewrite-history-list") {
+          const flow = state.rewriteFlow as HistoryListEditState
+          if (flow.step === "form" && !flow.rows) {
+            const commits = await searchCommits(repository.repoPath, { query: state.historyQuery })
+            state = { ...state, rewriteFlow: { ...flow, rows: commits.map(toHistoryEditDraft), selectedRowIndex: clamp(flow.selectedRowIndex, 0, Math.max(0, commits.length - 1)) } }
+            void render()
+            return
+          }
+          if (flow.step === "preview" && !flow.preview) {
+            try {
+              const result = await editCommitHistory({ repoPath: repository.repoPath, operations: toHistoryEditOperations(flow) })
+              state = { ...state, rewriteFlow: { ...flow, preview: result.preview, operationLogPath: result.operationLogPath, error: undefined } }
+            } catch (err) {
+              state = { ...state, rewriteFlow: { ...flow, step: "form", error: err instanceof Error ? err.message : String(err) } }
+            }
+            void render()
+            return
+          }
+          if (flow.step === "applying") {
+            try {
+              const result = await editCommitHistory({ repoPath: repository.repoPath, operations: toHistoryEditOperations(flow), apply: true })
+              state = { ...state, rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined } }
+            } catch (err) {
+              state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
+            }
+            void render()
+            return
+          }
+          renderer.root.add(HistoryListEditFlowScreen(repository, flow))
         } else if (state.screen === "rewrite-split") {
           const flow = state.rewriteFlow as SplitCommitState
           if (flow.step === "form" && !flow.changedPaths) {
@@ -299,7 +332,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                     sha: commit.sha,
                     shortSha: commit.shortSha,
                     subject: commit.subject,
-                    action: "pick",
+                    action: "pick" as const,
                   })),
                   error: commits.length === 0 ? "Selected base has no commits after it" : undefined,
                 },
@@ -374,7 +407,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         void render()
         return
       }
-      const rewrites = ["rewrite-reword", "rewrite-drop", "rewrite-author", "rewrite-date", "rewrite-split", "rewrite-visual-rebase"] as const
+      const rewrites = ["rewrite-reword", "rewrite-drop", "rewrite-author", "rewrite-date", "rewrite-history-list", "rewrite-split", "rewrite-visual-rebase"] as const
       if (rewrites.includes(state.screen as (typeof rewrites)[number])) {
         state = { ...state, screen: "history", rewriteFlow: undefined }
         void render()
@@ -427,6 +460,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
     if (state.screen === "rewrite-drop") { handleDropKey(key); return }
     if (state.screen === "rewrite-author") { handleAuthorKey(key); return }
     if (state.screen === "rewrite-date") { handleDateKey(key); return }
+    if (state.screen === "rewrite-history-list") { handleHistoryListEditKey(key); return }
     if (state.screen === "rewrite-split") { handleSplitKey(key); return }
     if (state.screen === "rewrite-visual-rebase") { handleVisualRebaseKey(key); return }
   })
@@ -434,14 +468,30 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   // Conflict handlers
 
   function handleRecoveryKey(key: KeyEvent) {
-    if (!state.repoPath || key.sequence !== "e") return
-    exportLatestOperationReport({ repoPath: state.repoPath }).then((result) => {
-      state = { ...state, exportReportPath: result.outputPath, exportReportError: undefined }
-      return render()
-    }).catch((error) => {
-      state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
-      return render()
-    })
+    if (!state.repoPath) return
+    if (key.sequence === "e") {
+      exportLatestOperationReport({ repoPath: state.repoPath }).then((result) => {
+        state = { ...state, exportReportPath: result.outputPath, exportReportError: undefined }
+        return render()
+      }).catch((error) => {
+        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
+        return render()
+      })
+      return
+    }
+    if (key.sequence === "c") {
+      getRecoveryReport(state.repoPath).then((report) => {
+        const backup = report.backups[0]
+        if (!backup) throw new Error("No Git Surgeon backup refs found")
+        return createRecoveryBranch(state.repoPath!, backup.refName)
+      }).then((branch) => {
+        state = { ...state, exportReportPath: `Created recovery branch: ${branch}`, exportReportError: undefined }
+        return render()
+      }).catch((error) => {
+        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
+        return render()
+      })
+    }
   }
 
   function handleConflictKey(key: KeyEvent) {
@@ -635,6 +685,163 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
     }
   }
 
+  // List-based history edit handlers
+
+  function handleHistoryListEditKey(key: KeyEvent) {
+    const flow = state.rewriteFlow as HistoryListEditState
+    if (!flow) return
+
+    if (flow.step === "dirty") {
+      if (key.sequence === "s" && state.repoPath) {
+        runGitChecked({ repoPath: state.repoPath, args: ["stash", "push", "-u", "-m", "gitsurgeon auto-stash before history edit"] }).then((result) => {
+          state = { ...state, rewriteFlow: { ...flow, step: "preview", stashedRef: result.stdout.trim() || "stash@{0}", preview: undefined, error: undefined } }
+          return render()
+        }).catch((err) => {
+          state = { ...state, rewriteFlow: { ...flow, error: err instanceof Error ? err.message : String(err) } }
+          return render()
+        })
+        return
+      }
+      if (key.sequence === "m" || key.sequence === "c") {
+        state = { ...state, screen: "history", rewriteFlow: undefined }
+        void render()
+      }
+      return
+    }
+
+    if (flow.step === "form") {
+      const rows = flow.rows ?? []
+      if (flow.activeField !== "list") {
+        if (key.name === "escape" || key.name === "tab") {
+          state = { ...state, rewriteFlow: { ...flow, activeField: "list" } }
+          void render()
+          return
+        }
+        if (key.name === "left" || key.name === "right") {
+          const modes = ["author", "committer", "both"] as const
+          const selected = rows[flow.selectedRowIndex]
+          if (!selected || flow.activeField !== "date") return
+          const idx = modes.indexOf(selected.dateMode ?? "both")
+          const next = modes[clamp(idx + (key.name === "left" ? -1 : 1), 0, modes.length - 1)]
+          state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => ({ ...row, dateMode: next })) }
+          void render()
+          return
+        }
+        if (key.name === "backspace" || key.name === "delete") {
+          const field = flow.activeField
+          state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => editHistoryRowText(row, field, -1)) }
+          void render()
+          return
+        }
+        if (isTypableChar(key)) {
+          const field = flow.activeField
+          state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => editHistoryRowText(row, field, key.sequence)) }
+          void render()
+          return
+        }
+      }
+      if (key.name === "return") {
+        const operations = toHistoryEditOperations(flow)
+        if (operations.length === 0) {
+          state = { ...state, rewriteFlow: { ...flow, error: "Mark at least one commit for reword, drop, or date edit" } }
+        } else if (state.repository?.dirty) {
+          state = { ...state, rewriteFlow: { ...flow, step: "dirty", error: undefined } }
+        } else {
+          state = { ...state, rewriteFlow: { ...flow, step: "preview", preview: undefined, error: undefined, previewScrollOffset: 0 } }
+        }
+        void render()
+        return
+      }
+      if (key.name === "up" || key.name === "k") {
+        state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.max(0, flow.selectedRowIndex - 1) } }
+        void render()
+        return
+      }
+      if (key.name === "down" || key.name === "j") {
+        state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.min(Math.max(0, rows.length - 1), flow.selectedRowIndex + 1) } }
+        void render()
+        return
+      }
+      if (key.name === "pageup") {
+        state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.max(0, flow.selectedRowIndex - 15) } }
+        void render()
+        return
+      }
+      if (key.name === "pagedown") {
+        state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.min(Math.max(0, rows.length - 1), flow.selectedRowIndex + 15) } }
+        void render()
+        return
+      }
+      if (key.sequence === "x") {
+        state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => ({ ...row, drop: !row.drop, message: undefined, date: undefined })) }
+        void render()
+        return
+      }
+      if (key.sequence === "w") {
+        state = { ...state, rewriteFlow: updateSelectedHistoryEditRow({ ...flow, activeField: "message" }, (row) => ({ ...row, drop: false, message: row.message ?? row.subject })) }
+        void render()
+        return
+      }
+      if (key.sequence === "t") {
+        state = { ...state, rewriteFlow: updateSelectedHistoryEditRow({ ...flow, activeField: "date" }, (row) => ({ ...row, drop: false, date: row.date ?? row.authorDate, dateMode: row.dateMode ?? "both" })) }
+        void render()
+        return
+      }
+      if (key.sequence === "c") {
+        state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => ({ ...row, drop: false, message: undefined, date: undefined, dateMode: undefined })) }
+        void render()
+      }
+      return
+    }
+
+    if (flow.step === "preview" && flow.preview) {
+      if (key.name === "tab") {
+        const panes = ["oldGraph", "newGraph", "metadata", "todo", "diff"] as const
+        const idx = panes.indexOf(flow.previewPane)
+        state = { ...state, rewriteFlow: { ...flow, previewPane: panes[(idx + 1) % panes.length], previewScrollOffset: 0 } }
+        void render()
+        return
+      }
+      if (key.name === "up" || key.name === "k") {
+        state = { ...state, rewriteFlow: { ...flow, previewScrollOffset: Math.max(0, flow.previewScrollOffset - 1) } }
+        void render()
+        return
+      }
+      if (key.name === "down" || key.name === "j") {
+        state = { ...state, rewriteFlow: { ...flow, previewScrollOffset: flow.previewScrollOffset + 1 } }
+        void render()
+        return
+      }
+      if (key.name === "return") {
+        state = state.repository?.upstream
+          ? { ...state, rewriteFlow: { ...flow, step: "upstream-confirm", upstreamConfirmation: "", error: undefined } }
+          : { ...state, rewriteFlow: { ...flow, step: "applying" } }
+        void render()
+      }
+      return
+    }
+
+    if (flow.step === "upstream-confirm") {
+      const phrase = `rewrite ${state.repository?.branch ?? ""}`
+      if (key.name === "return") {
+        state = flow.upstreamConfirmation === phrase
+          ? { ...state, rewriteFlow: { ...flow, step: "applying", error: undefined } }
+          : { ...state, rewriteFlow: { ...flow, error: `Confirmation must match: ${phrase}` } }
+        void render()
+        return
+      }
+      if (key.name === "backspace" || key.name === "delete") {
+        state = { ...state, rewriteFlow: { ...flow, upstreamConfirmation: flow.upstreamConfirmation.slice(0, -1) } }
+        void render()
+        return
+      }
+      if (isTypableChar(key)) {
+        state = { ...state, rewriteFlow: { ...flow, upstreamConfirmation: `${flow.upstreamConfirmation}${key.sequence}` } }
+        void render()
+      }
+    }
+  }
+
   // Split commit handlers
 
   function handleSplitKey(key: KeyEvent) {
@@ -802,19 +1009,32 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+function visibleWindowStart(total: number, selectedIndex: number, scrollOffset: number, limit: number): number {
+  if (total <= limit) return 0
+  if (selectedIndex < scrollOffset) return selectedIndex
+  if (selectedIndex >= scrollOffset + limit) return selectedIndex - limit + 1
+  return Math.min(Math.max(0, scrollOffset), Math.max(0, total - limit))
+}
+
 function isTypableChar(key: KeyEvent): boolean {
   return !key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " " && key.name !== "q"
 }
 
 function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
   if (key.name === "up" || key.name === "k") {
-    return { ...state, selectedCommitIndex: Math.max(0, state.selectedCommitIndex - 1) }
+    return { ...state, selectedCommitIndex: Math.max(0, state.selectedCommitIndex - 1), historyScrollOffset: Math.max(0, state.historyScrollOffset - (state.selectedCommitIndex <= state.historyScrollOffset ? 1 : 0)) }
   }
   if (key.name === "down" || key.name === "j") {
     return { ...state, selectedCommitIndex: state.selectedCommitIndex + 1 }
   }
+  if (key.name === "pageup") {
+    return { ...state, selectedCommitIndex: Math.max(0, state.selectedCommitIndex - 18), historyScrollOffset: Math.max(0, state.historyScrollOffset - 18) }
+  }
+  if (key.name === "pagedown") {
+    return { ...state, selectedCommitIndex: state.selectedCommitIndex + 18, historyScrollOffset: state.historyScrollOffset + 18 }
+  }
   if (key.name === "backspace" || key.name === "delete") {
-    return { ...state, historyQuery: state.historyQuery.slice(0, -1), selectedCommitIndex: 0 }
+    return { ...state, historyQuery: state.historyQuery.slice(0, -1), selectedCommitIndex: 0, historyScrollOffset: 0 }
   }
 
   if (!key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " ") {
@@ -837,9 +1057,12 @@ function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
     if (key.sequence === "i" && state.lastSelectedCommit) {
       return startVisualRebaseFlow(state, state.lastSelectedCommit)
     }
+    if (key.sequence === "m") {
+      return startHistoryListEditFlow(state)
+    }
     // Otherwise append to search filter, excluding shortcut keys.
-    if (key.sequence !== "q" && key.sequence !== "w" && key.sequence !== "d" && key.sequence !== "a" && key.sequence !== "t" && key.sequence !== "s" && key.sequence !== "i") {
-      return { ...state, historyQuery: `${state.historyQuery}${key.sequence}`, selectedCommitIndex: 0 }
+    if (key.sequence !== "q" && key.sequence !== "w" && key.sequence !== "d" && key.sequence !== "a" && key.sequence !== "t" && key.sequence !== "s" && key.sequence !== "i" && key.sequence !== "m") {
+      return { ...state, historyQuery: `${state.historyQuery}${key.sequence}`, selectedCommitIndex: 0, historyScrollOffset: 0 }
     }
   }
   return state
@@ -863,6 +1086,44 @@ function toSplitCommitParts(flow: SplitCommitState): SplitCommitPart[] {
     message: part.message,
     paths: paths.filter((path) => (flow.pathAssignments[path] ?? 0) === index),
   }))
+}
+
+function toHistoryEditDraft(commit: Awaited<ReturnType<typeof searchCommits>>[number]): HistoryEditDraft {
+  return {
+    sha: commit.sha,
+    shortSha: commit.shortSha,
+    subject: commit.subject,
+    authorDate: commit.authorDate,
+  }
+}
+
+function toHistoryEditOperations(flow: HistoryListEditState): HistoryEditOperation[] {
+  return (flow.rows ?? []).flatMap((row) => {
+    if (!row.drop && row.message === undefined && row.date === undefined) return []
+    return [{
+      sha: row.sha,
+      drop: row.drop,
+      message: row.message,
+      date: row.date,
+      dateMode: row.dateMode,
+    }]
+  })
+}
+
+function updateSelectedHistoryEditRow(flow: HistoryListEditState, update: (row: HistoryEditDraft) => HistoryEditDraft): HistoryListEditState {
+  const rows = flow.rows ?? []
+  if (rows.length === 0) return flow
+  return {
+    ...flow,
+    rows: rows.map((row, index) => index === flow.selectedRowIndex ? update(row) : row),
+    error: undefined,
+  }
+}
+
+function editHistoryRowText(row: HistoryEditDraft, field: "message" | "date", value: string | -1): HistoryEditDraft {
+  const current = field === "message" ? row.message ?? row.subject : row.date ?? row.authorDate
+  const next = value === -1 ? current.slice(0, -1) : `${current}${value}`
+  return field === "message" ? { ...row, message: next, drop: false } : { ...row, date: next, dateMode: row.dateMode ?? "both", drop: false }
 }
 
 function validateSplitFlow(flow: SplitCommitState): string | undefined {

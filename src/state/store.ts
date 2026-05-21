@@ -1,5 +1,5 @@
 import type { CommitSummary } from "../git/log"
-import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState } from "./types"
+import type { AppState, HistoryListEditState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState } from "./types"
 
 export function createInitialState(repoPath?: string): AppState {
   return {
@@ -8,6 +8,7 @@ export function createInitialState(repoPath?: string): AppState {
     commandLog: [],
     historyQuery: "",
     selectedCommitIndex: 0,
+    historyScrollOffset: 0,
   }
 }
 
@@ -70,6 +71,19 @@ export function startDateFlow(state: AppState, commit: CommitSummary): AppState 
     newDate: commit.authorDate,
   }
   return { ...state, screen: "rewrite-date", rewriteFlow: flow }
+}
+
+export function startHistoryListEditFlow(state: AppState): AppState {
+  const flow: HistoryListEditState = {
+    type: "history-list",
+    step: "form",
+    selectedRowIndex: state.selectedCommitIndex,
+    activeField: "list",
+    previewPane: "oldGraph",
+    previewScrollOffset: 0,
+    upstreamConfirmation: "",
+  }
+  return { ...state, screen: "rewrite-history-list", rewriteFlow: flow }
 }
 
 export function startSplitFlow(state: AppState, commit: CommitSummary): AppState {

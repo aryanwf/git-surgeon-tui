@@ -4,6 +4,7 @@ import { splitSingleCommit, type SplitCommitPart } from "./git/split"
 import { visualInteractiveRebase, type VisualRebaseRow } from "./git/rebase"
 import { changeOldCommitDate, type DateChangeMode } from "./git/date"
 import { analyzeRepositorySize, type SizeAnalyzerMethod, type SizeAnalyzerSort, type SizeAnalyzerStatus } from "./git/size-analyzer"
+import { exportLatestOperationReport } from "./git/report"
 import { runGitSurgeonTui } from "./app"
 
 type CliOptions = {
@@ -19,12 +20,13 @@ type CliOptions = {
   sortBy?: SizeAnalyzerSort
   status?: SizeAnalyzerStatus
   limit?: number
+  output?: string
   apply: boolean
 }
 
 async function main(args: string[]): Promise<void> {
   const [command, ...rest] = args
-  if (command !== "tui" && command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase" && command !== "date" && command !== "size") {
+  if (command !== "tui" && command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase" && command !== "date" && command !== "size" && command !== "report") {
     printUsage()
     process.exit(command ? 1 : 0)
   }
@@ -46,6 +48,15 @@ async function main(args: string[]): Promise<void> {
     for (const row of result.rows) {
       console.log(`${formatSize(row.unpackedSize)}\t${formatSize(row.packedSize)}\t${row.status}\t${row.objectId || "-"}\t${row.paths.join(", ")}`)
     }
+    return
+  }
+
+  if (command === "report") {
+    const options = parseReportArgs(rest)
+    if (!options.repo) throw new Error("Missing --repo <path>")
+    const result = await exportLatestOperationReport({ repoPath: options.repo, outputPath: options.output })
+    console.log(`Exported operation report: ${result.outputPath}`)
+    console.log(`Source operation log: ${result.sourceLogPath}`)
     return
   }
 
@@ -253,6 +264,17 @@ function parseSizeArgs(args: string[]): CliOptions {
   return options
 }
 
+function parseReportArgs(args: string[]): CliOptions {
+  const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === "--repo") options.repo = args[++index]
+    else if (arg === "--output") options.output = args[++index]
+    else throw new Error(`Unknown argument: ${arg}`)
+  }
+  return options
+}
+
 function parseMessageArg(value: string | undefined): RenameCommitMessage {
   if (!value) throw new Error("Missing --message value")
   const separator = value.indexOf("=")
@@ -331,6 +353,7 @@ function printUsage(): void {
   console.log("       bun src/index.ts rebase --repo <path> --base <commit> --row <action:sha[:message-or-command]> [--row ...] [--apply]")
   console.log("       bun src/index.ts date --repo <path> --sha <commit> --date <iso-8601> --mode <author|committer|both> [--apply]")
   console.log("       bun src/index.ts size --repo <path> [--method <native|filter-repo>] [--sort <unpacked|packed>] [--status <all|present|deleted>] [--limit <n>]")
+  console.log("       bun src/index.ts report --repo <path> [--output <path>]")
 }
 
 if (import.meta.main) {
@@ -347,3 +370,4 @@ export { visualInteractiveRebase } from "./git/rebase"
 export { changeOldCommitDate } from "./git/date"
 export { analyzeRepositorySize } from "./git/size-analyzer"
 export { buildHistoryPreview, historyRange, type HistoryPreview } from "./git/preview"
+export { exportLatestOperationReport, formatOperationReport } from "./git/report"

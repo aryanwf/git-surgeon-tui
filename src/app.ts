@@ -1,4 +1,5 @@
 import { createCliRenderer, type KeyEvent } from "@opentui/core"
+import { loadGitSurgeonConfig, rememberRecentRepo } from "./config"
 import { changeCommitAuthor, validateAuthorInput } from "./git/author"
 import { getConflictReport, rebaseAbort, rebaseContinue, rebaseSkip } from "./git/conflict"
 import { changeOldCommitDate } from "./git/date"
@@ -7,6 +8,7 @@ import { getCommitDiff, listCommits, searchCommits } from "./git/log"
 import { buildHistoryPreview, withScratchClone } from "./git/preview"
 import { visualInteractiveRebase, type VisualRebaseAction, type VisualRebaseRow } from "./git/rebase"
 import { validateRepository } from "./git/repository"
+import { exportLatestOperationReport } from "./git/report"
 import { getRecoveryReport } from "./git/recovery"
 import { renameOldCommitMessages } from "./git/reword"
 import { analyzeRepositorySize } from "./git/size-analyzer"
@@ -15,6 +17,7 @@ import { createInitialState, startAuthorFlow, startDateFlow, startDropFlow, star
 import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState, VisualRebaseTodoRow } from "./state/types"
 import { DashboardScreen } from "./tui/screens/dashboard"
 import { HistoryScreen } from "./tui/screens/history"
+import { HelpScreen } from "./tui/screens/help"
 import { PreviewScreen } from "./tui/screens/preview"
 import { RepoPickerScreen } from "./tui/screens/repo-picker"
 import { RecoveryScreen } from "./tui/screens/recovery"
@@ -36,8 +39,10 @@ export type RunTuiOptions = {
 
 export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<void> {
   const renderer = await createCliRenderer({ exitOnCtrlC: true })
+  const config = await loadGitSurgeonConfig()
   let state: AppState = createInitialState(options.repoPath)
-  const pickerPaths = uniquePaths([options.repoPath, process.cwd(), ...(options.recentRepos ?? [])])
+  const pickerPaths = uniquePaths([options.repoPath, process.cwd(), ...(options.recentRepos ?? []), ...config.recentRepos])
+  if (options.repoPath) void rememberRecentRepo(options.repoPath).catch(() => {})
 
   const render = async () => {
     for (const child of renderer.root.getChildren()) child.destroyRecursively()
@@ -62,7 +67,9 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           renderer.root.add(SizeAnalyzerScreen(repository, result))
         } else if (state.screen === "recovery") {
           const report = await getRecoveryReport(repository.repoPath)
-          renderer.root.add(RecoveryScreen(repository, report))
+          renderer.root.add(RecoveryScreen(repository, report, { path: state.exportReportPath, error: state.exportReportError }))
+        } else if (state.screen === "help") {
+          renderer.root.add(HelpScreen(repository))
         } else if (state.screen === "preview") {
           const preview = await withScratchClone(repository.repoPath, (scratch) => {
             return buildHistoryPreview({ repoPath: repository.repoPath, scratchPath: scratch.repoPath, range: "HEAD" })
@@ -344,18 +351,29 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         renderer.root.add(RepoPickerScreen(pickerPaths, selectRepo, state.error))
       }
     } else {
-      renderer.root.add(RepoPickerScreen(pickerPaths, selectRepo, state.error))
+      if (state.screen === "help") renderer.root.add(HelpScreen())
+      else renderer.root.add(RepoPickerScreen(pickerPaths, selectRepo, state.error))
     }
   }
 
   const selectRepo = (repoPath: string) => {
-    state = { ...state, screen: "dashboard", repoPath }
+    state = { ...state, screen: "dashboard", repoPath, exportReportPath: undefined, exportReportError: undefined }
+    void rememberRecentRepo(repoPath).catch(() => {})
     void render()
   }
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     // Global shortcuts
-    if (key.name === "q" || key.name === "escape") {
+    if (key.name === "q") {
+      renderer.destroy()
+      return
+    }
+    if (key.name === "escape") {
+      if (state.screen === "help") {
+        state = { ...state, screen: state.repoPath ? "dashboard" : "repo-picker" }
+        void render()
+        return
+      }
       const rewrites = ["rewrite-reword", "rewrite-drop", "rewrite-author", "rewrite-date", "rewrite-split", "rewrite-visual-rebase"] as const
       if (rewrites.includes(state.screen as (typeof rewrites)[number])) {
         state = { ...state, screen: "history", rewriteFlow: undefined }
@@ -366,6 +384,11 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
       return
     }
     if (key.name === "r") { void render(); return }
+    if (key.sequence === "?") {
+      state = { ...state, screen: "help" }
+      void render()
+      return
+    }
     if (key.name === "b" && state.screen !== "repo-picker") {
       state = { ...state, screen: "dashboard", rewriteFlow: undefined }
       void render()
@@ -394,6 +417,11 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
       return
     }
 
+    if (state.screen === "recovery") {
+      handleRecoveryKey(key)
+      return
+    }
+
     // Rewrite flow screens
     if (state.screen === "rewrite-reword") { handleRewordKey(key); return }
     if (state.screen === "rewrite-drop") { handleDropKey(key); return }
@@ -404,6 +432,17 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   })
 
   // Conflict handlers
+
+  function handleRecoveryKey(key: KeyEvent) {
+    if (!state.repoPath || key.sequence !== "e") return
+    exportLatestOperationReport({ repoPath: state.repoPath }).then((result) => {
+      state = { ...state, exportReportPath: result.outputPath, exportReportError: undefined }
+      return render()
+    }).catch((error) => {
+      state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
+      return render()
+    })
+  }
 
   function handleConflictKey(key: KeyEvent) {
     if (!state.repoPath) return

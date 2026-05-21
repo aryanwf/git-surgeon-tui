@@ -14,6 +14,7 @@ export type AppScreen =
   | "preview"
   | "size-analyzer"
   | "recovery"
+  | "help"
   | "rewrite-reword"
   | "rewrite-drop"
   | "rewrite-author"
@@ -161,4 +162,6 @@ export type AppState = {
   // Populated during history screen render so rewrite flow triggers have the commit data.
   lastSelectedCommit?: CommitSummary
   rewriteFlow?: RewriteFlowState
+  exportReportPath?: string
+  exportReportError?: string
 }

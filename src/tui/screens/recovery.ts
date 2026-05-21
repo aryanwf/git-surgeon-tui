@@ -4,7 +4,7 @@ import type { RepositoryState } from "../../git/repository"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
-export function RecoveryScreen(state: RepositoryState, report: RecoveryReport) {
+export function RecoveryScreen(state: RepositoryState, report: RecoveryReport, exportResult?: { path?: string; error?: string }) {
   return AppFrame(
     "Recovery Viewer",
     Box(
@@ -12,9 +12,11 @@ export function RecoveryScreen(state: RepositoryState, report: RecoveryReport) {
       section("Reflog", report.reflog.slice(0, 10).map((entry) => `${entry.selector.padEnd(12)} ${entry.sha.slice(0, 10)} ${truncate(entry.subject, 74)}`)),
       section("Backup refs", report.backups.slice(0, 8).map((ref) => `${ref.sha.slice(0, 10)} ${truncate(ref.refName, 88)}`)),
       section("Dangling objects", report.dangling.slice(0, 10).map((object) => `${object.objectType.padEnd(6)} ${object.sha.slice(0, 10)} ${truncate(object.subject ?? formatSize(object.size), 74)}`)),
+      ...(exportResult?.path ? [Text({ content: `Exported report: ${exportResult.path}`, fg: theme.ok })] : []),
+      ...(exportResult?.error ? [Text({ content: `Export failed: ${exportResult.error}`, fg: theme.danger })] : []),
     ),
     Text({ content: "Read-only scan. Recovery branch creation belongs to a later guarded action flow.", fg: theme.muted }),
-    Text({ content: "b: dashboard", fg: theme.muted }),
+    Text({ content: "e: export latest operation report  b: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }

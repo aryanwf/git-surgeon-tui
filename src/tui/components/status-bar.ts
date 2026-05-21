@@ -14,7 +14,7 @@ export function StatusBar(state?: RepositoryState) {
       justifyContent: "space-between",
     },
     Text({ content: status, fg: color }),
-    Text({ content: "q: quit  r: refresh", fg: theme.muted }),
+    Text({ content: "?: help  q: quit  r: refresh", fg: theme.muted }),
   )
 }
 

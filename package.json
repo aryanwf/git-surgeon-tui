@@ -1,5 +1,13 @@
 {
+  "name": "gitsurgeon",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "gitsurgeon": "./src/index.ts"
+  },
   "scripts": {
+    "start": "bun src/index.ts tui",
+    "build:bin": "bun build src/index.ts --compile --outfile dist/gitsurgeon",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

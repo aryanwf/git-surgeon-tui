@@ -2,6 +2,7 @@ import { renameOldCommitMessages, type RenameCommitMessage } from "./git/reword"
 import { dropSingleCommit } from "./git/drop"
 import { splitSingleCommit, type SplitCommitPart } from "./git/split"
 import { visualInteractiveRebase, type VisualRebaseRow } from "./git/rebase"
+import { changeOldCommitDate, type DateChangeMode } from "./git/date"
 
 type CliOptions = {
   repo?: string
@@ -10,14 +11,36 @@ type CliOptions = {
   rows: VisualRebaseRow[]
   sha?: string
   base?: string
+  date?: string
+  mode?: DateChangeMode
   apply: boolean
 }
 
 async function main(args: string[]): Promise<void> {
   const [command, ...rest] = args
-  if (command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase") {
+  if (command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase" && command !== "date") {
     printUsage()
     process.exit(command ? 1 : 0)
+  }
+
+  if (command === "date") {
+    const options = parseDateArgs(rest)
+    if (!options.repo) throw new Error("Missing --repo <path>")
+    if (!options.sha) throw new Error("Missing --sha <commit>")
+    if (!options.date) throw new Error("Missing --date <iso-8601>")
+    if (!options.mode) throw new Error("Missing --mode <author|committer|both>")
+    const result = await changeOldCommitDate({ repoPath: options.repo, sha: options.sha, date: options.date, mode: options.mode, apply: options.apply })
+
+    console.log(options.apply ? "Applied date rewrite" : "Previewed date rewrite")
+    console.log(`Old HEAD: ${result.preview.oldHead}`)
+    console.log(`New HEAD: ${result.preview.newHead}`)
+    console.log(`Changed commits: ${result.preview.changedCommitCount}`)
+    console.log("New verification log:")
+    console.log(result.preview.newLog.trimEnd())
+    if (result.backupRef) console.log(`Backup ref: ${result.backupRef}`)
+    if (result.operationLogPath) console.log(`Operation log: ${result.operationLogPath}`)
+    for (const warning of result.preview.warnings) console.warn(`Warning: ${warning}`)
+    return
   }
 
   if (command === "rebase") {
@@ -139,6 +162,20 @@ function parseRebaseArgs(args: string[]): CliOptions {
   return options
 }
 
+function parseDateArgs(args: string[]): CliOptions {
+  const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === "--repo") options.repo = args[++index]
+    else if (arg === "--apply") options.apply = true
+    else if (arg === "--sha") options.sha = args[++index]
+    else if (arg === "--date") options.date = args[++index]
+    else if (arg === "--mode") options.mode = parseDateMode(args[++index])
+    else throw new Error(`Unknown argument: ${arg}`)
+  }
+  return options
+}
+
 function parseMessageArg(value: string | undefined): RenameCommitMessage {
   if (!value) throw new Error("Missing --message value")
   const separator = value.indexOf("=")
@@ -171,11 +208,17 @@ function isVisualRebaseAction(value: string): value is VisualRebaseRow["action"]
   return value === "pick" || value === "reword" || value === "edit" || value === "squash" || value === "fixup" || value === "drop" || value === "exec"
 }
 
+function parseDateMode(value: string | undefined): DateChangeMode {
+  if (value === "author" || value === "committer" || value === "both") return value
+  throw new Error("Date mode must be author, committer, or both")
+}
+
 function printUsage(): void {
   console.log("Usage: bun src/index.ts rename --repo <path> --message <sha=message> [--message <sha=message>] [--apply]")
   console.log("       bun src/index.ts drop --repo <path> --sha <commit> [--apply]")
   console.log("       bun src/index.ts split --repo <path> --sha <commit> --part <message:path,path> --part <message:path> [--apply]")
   console.log("       bun src/index.ts rebase --repo <path> --base <commit> --row <action:sha[:message-or-command]> [--row ...] [--apply]")
+  console.log("       bun src/index.ts date --repo <path> --sha <commit> --date <iso-8601> --mode <author|committer|both> [--apply]")
 }
 
 if (import.meta.main) {
@@ -189,3 +232,4 @@ export { renameOldCommitMessages } from "./git/reword"
 export { dropSingleCommit } from "./git/drop"
 export { splitSingleCommit } from "./git/split"
 export { visualInteractiveRebase } from "./git/rebase"
+export { changeOldCommitDate } from "./git/date"

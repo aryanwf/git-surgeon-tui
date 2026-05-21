@@ -3,7 +3,7 @@ import type { RepositoryState } from "../../git/repository"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
-export function DashboardScreen(state: RepositoryState) {
+export function DashboardScreen(state: RepositoryState, notice?: string) {
   const rows = dashboardRows(state)
   const commands = [
     ["h", "History and diff"],
@@ -23,8 +23,9 @@ export function DashboardScreen(state: RepositoryState) {
         Text({ content: "Commands available", fg: theme.accent }),
         ...commands.map(([key, label]) => Text({ content: `${key.padEnd(3)} ${label}`, fg: theme.muted })),
       ),
+      ...(notice ? [Text({ content: notice, fg: theme.danger })] : []),
     ),
-    Text({ content: "q: quit  r: refresh", fg: theme.muted }),
+    Text({ content: "r: refresh  esc: exit prompt  q: quit", fg: theme.muted }),
     StatusBar(state),
   )
 }

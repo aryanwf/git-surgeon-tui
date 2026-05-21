@@ -9,7 +9,7 @@ export function HelpScreen(state?: RepositoryState) {
     Box(
       { flexDirection: "column", gap: 1, flexGrow: 1 },
       section("Navigation", [
-        "?: help    b: dashboard    r: refresh    q: quit",
+        "?: help    b: dashboard    r: refresh    esc: dashboard, then exit prompt    q: quit",
         "Dashboard: h history, p preview, s size analysis, v recovery",
         "History: j/k select, type to filter, backspace deletes filter text",
       ]),
@@ -24,7 +24,7 @@ export function HelpScreen(state?: RepositoryState) {
         "Config is stored at $XDG_CONFIG_HOME/gitsurgeon/config.json or ~/.config/gitsurgeon/config.json.",
       ]),
     ),
-    Text({ content: "b/escape: back to dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }

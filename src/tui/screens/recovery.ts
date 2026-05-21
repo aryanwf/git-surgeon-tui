@@ -17,7 +17,7 @@ export function RecoveryScreen(state: RepositoryState, report: RecoveryReport, e
       ...(exportResult?.error ? [Text({ content: `Export failed: ${exportResult.error}`, fg: theme.danger })] : []),
       ...(newestBackup ? [Text({ content: `Newest backup action target: ${newestBackup.refName}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "c: create recovery branch from newest backup  e: export latest operation report  b: dashboard", fg: theme.muted }),
+    Text({ content: "c: create recovery branch  e: export latest operation report  b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }

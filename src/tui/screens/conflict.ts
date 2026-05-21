@@ -39,7 +39,7 @@ export function ConflictScreen(state: RepositoryState, conflict: ConflictState) 
       ),
       recoveryCommandsBox(state),
     ),
-    Text({ content: "c: git rebase --continue  s: git rebase --skip (warning)  a: git rebase --abort", fg: theme.muted }),
+    Text({ content: "c: git rebase --continue  s: git rebase --skip  a: git rebase --abort  b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }

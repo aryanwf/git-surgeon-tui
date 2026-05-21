@@ -26,7 +26,7 @@ function RewordFormScreen(state: RepositoryState, flow: RewriteRewordState) {
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "type: edit message  backspace: delete  enter: preview  escape: cancel", fg: theme.muted }),
+    Text({ content: "type: edit message  backspace: delete  enter: preview  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -44,7 +44,7 @@ function RewordPreviewScreen(state: RepositoryState, flow: RewriteRewordState) {
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  escape: cancel", fg: theme.muted }),
+    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -58,7 +58,7 @@ function RewordResultScreen(state: RepositoryState, flow: RewriteRewordState) {
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.preview?.backupRef ? [Text({ content: `Backup ref preserved: ${flow.preview.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      Text({ content: "b/esc: dashboard", fg: theme.muted }),
       StatusBar(state),
     )
   }
@@ -70,7 +70,7 @@ function RewordResultScreen(state: RepositoryState, flow: RewriteRewordState) {
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -105,7 +105,7 @@ function DropConfirmScreen(state: RepositoryState, flow: RewriteDropState) {
         : Text({ content: "No descendant commits.", fg: theme.muted }),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "enter: preview drop  escape: cancel", fg: theme.muted }),
+    Text({ content: "enter: preview drop  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -123,7 +123,7 @@ function DropPreviewScreen(state: RepositoryState, flow: RewriteDropState) {
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  escape: cancel", fg: theme.muted }),
+    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -137,7 +137,7 @@ function DropResultScreen(state: RepositoryState, flow: RewriteDropState) {
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      Text({ content: "b/esc: dashboard", fg: theme.muted }),
       StatusBar(state),
     )
   }
@@ -149,7 +149,7 @@ function DropResultScreen(state: RepositoryState, flow: RewriteDropState) {
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -191,7 +191,7 @@ function AuthorFormScreen(state: RepositoryState, flow: RewriteAuthorState) {
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "tab: next field  left/right: change mode  enter: next  escape: cancel", fg: theme.muted }),
+    Text({ content: "tab: next field  left/right: change mode  enter: next  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -216,7 +216,7 @@ function AuthorWarningScreen(state: RepositoryState, flow: RewriteAuthorState) {
         Text({ content: `  New:     ${flow.newName} <${flow.newEmail}>`, fg: theme.text }),
       ),
     ),
-    Text({ content: "enter: proceed to preview  escape: cancel", fg: theme.muted }),
+    Text({ content: "enter: proceed to preview  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -234,7 +234,7 @@ function AuthorPreviewScreen(state: RepositoryState, flow: RewriteAuthorState) {
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  escape: cancel", fg: theme.muted }),
+    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -248,7 +248,7 @@ function AuthorResultScreen(state: RepositoryState, flow: RewriteAuthorState) {
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      Text({ content: "b/esc: dashboard", fg: theme.muted }),
       StatusBar(state),
     )
   }
@@ -260,7 +260,7 @@ function AuthorResultScreen(state: RepositoryState, flow: RewriteAuthorState) {
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -301,7 +301,7 @@ function DateFormScreen(state: RepositoryState, flow: RewriteDateState) {
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "type: edit date  left/right: change mode  enter: preview  escape: cancel", fg: theme.muted }),
+    Text({ content: "type: edit date  left/right: change mode  enter: preview  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -319,7 +319,7 @@ function DatePreviewScreen(state: RepositoryState, flow: RewriteDateState) {
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  escape: cancel", fg: theme.muted }),
+    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -333,7 +333,7 @@ function DateResultScreen(state: RepositoryState, flow: RewriteDateState) {
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      Text({ content: "b/esc: dashboard", fg: theme.muted }),
       StatusBar(state),
     )
   }
@@ -345,7 +345,7 @@ function DateResultScreen(state: RepositoryState, flow: RewriteDateState) {
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -408,7 +408,7 @@ function HistoryListDirtyScreen(state: RepositoryState, flow: HistoryListEditSta
       ),
       Text({ content: "s: stash local changes with git stash push -u", fg: theme.text }),
       Text({ content: "m: commit manually and return to history", fg: theme.text }),
-      Text({ content: "c/escape: cancel", fg: theme.text }),
+      Text({ content: "c: cancel  esc: dashboard", fg: theme.text }),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
     StatusBar(state),
@@ -438,7 +438,7 @@ function HistoryListPreviewScreen(state: RepositoryState, flow: HistoryListEditS
       warningsBox(p?.warnings ?? []),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "tab: pane  j/k: scroll  enter: apply after preview succeeds  escape: cancel", fg: theme.muted }),
+    Text({ content: "tab: pane  j/k: scroll  enter: apply after preview succeeds  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -452,13 +452,13 @@ function HistoryListUpstreamConfirmScreen(state: RepositoryState, flow: HistoryL
       Box(
         { flexDirection: "column", borderStyle: "single", borderColor: theme.danger, padding: 1 },
         Text({ content: `Current branch tracks ${state.upstream}.`, fg: theme.danger }),
-        Text({ content: "This applies the local rewrite, then pushes with --force-with-lease.", fg: theme.text }),
+        Text({ content: "This applies the local rewrite, then runs git push -f.", fg: theme.text }),
         Text({ content: `Type exactly: ${phrase}`, fg: theme.accent }),
       ),
       Text({ content: `${flow.upstreamConfirmation}|`, fg: theme.text }),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "type phrase  enter: apply  escape: cancel", fg: theme.muted }),
+    Text({ content: "type phrase  enter: apply  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -472,7 +472,7 @@ function HistoryListResultScreen(state: RepositoryState, flow: HistoryListEditSt
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      Text({ content: "b/esc: dashboard", fg: theme.muted }),
       StatusBar(state),
     )
   }
@@ -487,7 +487,7 @@ function HistoryListResultScreen(state: RepositoryState, flow: HistoryListEditSt
       ...(flow.stashedRef ? [Text({ content: `Local changes were stashed: ${flow.stashedRef}`, fg: theme.muted })] : []),
       Text({ content: "Recovery: create a branch from the backup ref or reset to it from the Recovery Viewer.", fg: theme.muted }),
     ),
-    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -553,7 +553,7 @@ function SplitCommitPreviewScreen(state: RepositoryState, flow: SplitCommitState
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  escape: cancel", fg: theme.muted }),
+    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -567,7 +567,7 @@ function SplitCommitResultScreen(state: RepositoryState, flow: SplitCommitState)
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      Text({ content: "b/esc: dashboard", fg: theme.muted }),
       StatusBar(state),
     )
   }
@@ -579,7 +579,7 @@ function SplitCommitResultScreen(state: RepositoryState, flow: SplitCommitState)
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -645,7 +645,7 @@ function VisualRebasePreviewScreen(state: RepositoryState, flow: VisualRebaseSta
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  escape: cancel", fg: theme.muted }),
+    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -659,7 +659,7 @@ function VisualRebaseResultScreen(state: RepositoryState, flow: VisualRebaseStat
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      Text({ content: "b/esc: dashboard", fg: theme.muted }),
       StatusBar(state),
     )
   }
@@ -671,7 +671,7 @@ function VisualRebaseResultScreen(state: RepositoryState, flow: VisualRebaseStat
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }

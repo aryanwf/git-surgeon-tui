@@ -6,23 +6,33 @@ import { AppFrame, theme } from "../layout"
 
 export function PreviewScreen(state: RepositoryState, preview: HistoryPreview, changedCommitCount?: number, droppedCommitIds: string[] = []) {
   const rendered = renderHistoryPreview(preview, { changedCommitCount, droppedCommitIds })
+  const hasChanges = preview.oldHead !== preview.newHead || preview.diffPatch.trim() !== "" || preview.diffStat.trim() !== ""
   return AppFrame(
     "History Preview",
-    Box(
-      { flexDirection: "column", gap: 1, flexGrow: 1 },
-      Box(
-        { flexDirection: "row", gap: 1 },
+    hasChanges
+      ? Box(
+        { flexDirection: "column", gap: 1, flexGrow: 1 },
+        Box(
+          { flexDirection: "row", gap: 1 },
+          panel("Summary", rendered.summary, theme.text, 6),
+          panel("Final Diff Stat", rendered.finalDiffStat, theme.text, 6),
+        ),
+        Box(
+          { flexDirection: "row", gap: 1, flexGrow: 1 },
+          panel("Before", rendered.oldGraph, theme.danger, 18),
+          panel("After", rendered.newGraph, theme.ok, 18),
+        ),
+        panel("Final Diff", rendered.finalDiffPatch, theme.text, 12),
+      )
+      : Box(
+        { flexDirection: "column", gap: 1, flexGrow: 1 },
         panel("Summary", rendered.summary, theme.text, 6),
-        panel("Final Diff Stat", rendered.finalDiffStat, theme.text, 6),
+        Box(
+          { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
+          Text({ content: "No changes have been made.", fg: theme.muted }),
+        ),
       ),
-      Box(
-        { flexDirection: "row", gap: 1, flexGrow: 1 },
-        panel("Before", rendered.oldGraph, theme.danger, 18),
-        panel("After", rendered.newGraph, theme.ok, 18),
-      ),
-      panel("Final Diff", rendered.finalDiffPatch, theme.text, 12),
-    ),
-    Text({ content: "Preview runs in a scratch clone. Apply actions remain disabled until a scratch run succeeds.", fg: theme.muted }),
+    Text({ content: "b: dashboard  esc: dashboard, then exit prompt  r: refresh", fg: theme.muted }),
     StatusBar(state),
   )
 }

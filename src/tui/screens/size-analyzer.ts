@@ -17,7 +17,7 @@ export function SizeAnalyzerScreen(state: RepositoryState, result: SizeAnalyzerR
       })),
     ),
     Text({ content: "Native read-only fallback is shown. CLI size command also supports --method filter-repo.", fg: theme.muted }),
-    Text({ content: "b: dashboard", fg: theme.muted }),
+    Text({ content: "b/esc: dashboard  r: refresh", fg: theme.muted }),
     StatusBar(state),
   )
 }

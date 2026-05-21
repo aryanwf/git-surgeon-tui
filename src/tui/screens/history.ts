@@ -24,7 +24,7 @@ export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], 
         ...previewLines(diff, 24).map((line) => Text({ content: line, fg: lineColor(line) })),
       ),
     ),
-    Text({ content: "j/k: select  pgup/pgdn: jump  type: filter  m: list edit  w/d/a/t/s/i: single flows  b: dashboard", fg: theme.muted }),
+    Text({ content: "j/k: select  pgup/pgdn: jump  type: filter  m: edit history list  w: reword  d: drop  a: author  t: date  s: split  i: rebase  b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }

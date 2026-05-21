@@ -191,6 +191,9 @@ export type AppState = {
   repository?: RepositoryState
   error?: string
   commandLog: string[]
+  repoQuery: string
+  selectedRepoIndex: number
+  exitPrompt: boolean
   historyQuery: string
   selectedCommitIndex: number
   historyScrollOffset: number

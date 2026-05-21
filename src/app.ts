@@ -1,4 +1,6 @@
 import { createCliRenderer, type KeyEvent } from "@opentui/core"
+import { readdir, stat } from "node:fs/promises"
+import { join } from "node:path"
 import { loadGitSurgeonConfig, rememberRecentRepo } from "./config"
 import { changeCommitAuthor, validateAuthorInput } from "./git/author"
 import { getConflictReport, rebaseAbort, rebaseContinue, rebaseSkip } from "./git/conflict"
@@ -44,7 +46,8 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   const renderer = await createCliRenderer({ exitOnCtrlC: true })
   const config = await loadGitSurgeonConfig()
   let state: AppState = createInitialState(options.repoPath)
-  const pickerPaths = uniquePaths([options.repoPath, process.cwd(), ...(options.recentRepos ?? []), ...config.recentRepos])
+  const discoveredRepos = await discoverRepoFolders(process.cwd())
+  const pickerPaths = uniquePaths([options.repoPath, process.cwd(), ...discoveredRepos, ...(options.recentRepos ?? []), ...config.recentRepos])
   if (options.repoPath) void rememberRecentRepo(options.repoPath).catch(() => {})
 
   const render = async () => {
@@ -278,7 +281,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           if (flow.step === "applying") {
             try {
               const result = await editCommitHistory({ repoPath: repository.repoPath, operations: toHistoryEditOperations(flow), apply: true })
-              const pushOutput = repository.upstream ? await pushForceWithLease(repository.repoPath) : undefined
+              const pushOutput = repository.upstream ? await pushForce(repository.repoPath) : undefined
               state = { ...state, rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput, error: undefined } }
             } catch (err) {
               state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
@@ -381,45 +384,46 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           }
           mount(VisualRebaseFlowScreen(repository, flow))
         } else {
-          mount(DashboardScreen(repository))
+          mount(DashboardScreen(repository, state.exitPrompt ? "press esc again to exit" : undefined))
         }
       } catch (error) {
         state = { ...state, screen: "repo-picker", error: error instanceof Error ? error.message : String(error) }
-        mount(RepoPickerScreen(pickerPaths, selectRepo, state.error))
+        mount(RepoPickerScreen(filteredRepoPaths(pickerPaths, state.repoQuery), state.repoQuery, state.selectedRepoIndex, state.error))
       }
     } else {
       if (state.screen === "help") mount(HelpScreen())
-      else mount(RepoPickerScreen(pickerPaths, selectRepo, state.error))
+      else mount(RepoPickerScreen(filteredRepoPaths(pickerPaths, state.repoQuery), state.repoQuery, state.selectedRepoIndex, state.error))
     }
   }
 
   const selectRepo = (repoPath: string) => {
-    state = { ...state, screen: "dashboard", repoPath, exportReportPath: undefined, exportReportError: undefined }
+    state = { ...state, screen: "dashboard", repoPath, repoQuery: "", selectedRepoIndex: 0, exitPrompt: false, exportReportPath: undefined, exportReportError: undefined }
     void rememberRecentRepo(repoPath).catch(() => {})
     void render()
   }
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
+    if (state.screen === "repo-picker") {
+      const nextState = handleRepoPickerKey(state, key, pickerPaths, selectRepo, renderer.destroy.bind(renderer))
+      if (nextState !== state) { state = nextState; void render() }
+      return
+    }
+
+    const clearExitPrompt = key.name !== "escape" && state.exitPrompt
+
     // Global shortcuts
     if (key.name === "q") {
       renderer.destroy()
       return
     }
     if (key.name === "escape") {
-      if (state.screen === "help") {
-        state = { ...state, screen: state.repoPath ? "dashboard" : "repo-picker" }
-        void render()
-        return
-      }
-      const rewrites = ["rewrite-reword", "rewrite-drop", "rewrite-author", "rewrite-date", "rewrite-history-list", "rewrite-split", "rewrite-visual-rebase"] as const
-      if (rewrites.includes(state.screen as (typeof rewrites)[number])) {
-        state = { ...state, screen: "history", rewriteFlow: undefined }
-        void render()
-        return
-      }
-      renderer.destroy()
+      if (state.screen === "dashboard" && state.exitPrompt) { renderer.destroy(); return }
+      if (state.screen === "dashboard") state = { ...state, exitPrompt: true }
+      else state = { ...state, screen: "dashboard", rewriteFlow: undefined, exitPrompt: false }
+      void render()
       return
     }
+    if (clearExitPrompt) state = { ...state, exitPrompt: false }
     if (key.name === "r") { void render(); return }
     if (key.sequence === "?") {
       state = { ...state, screen: "help" }
@@ -434,10 +438,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
 
     // Dashboard
     if (state.screen === "dashboard") {
-      if (key.name === "h") { state = { ...state, screen: "history", selectedCommitIndex: 0 }; void render() }
-      if (key.name === "s") { state = { ...state, screen: "size-analyzer" }; void render() }
-      if (key.name === "v") { state = { ...state, screen: "recovery" }; void render() }
-      if (key.name === "p") { state = { ...state, screen: "preview" }; void render() }
+      if (key.name === "h") { state = { ...state, screen: "history", selectedCommitIndex: 0, exitPrompt: false }; void render() }
+      if (key.name === "s") { state = { ...state, screen: "size-analyzer", exitPrompt: false }; void render() }
+      if (key.name === "v") { state = { ...state, screen: "recovery", exitPrompt: false }; void render() }
+      if (key.name === "p") { state = { ...state, screen: "preview", exitPrompt: false }; void render() }
       return
     }
 
@@ -1009,6 +1013,48 @@ function uniquePaths(paths: (string | undefined)[]): string[] {
   return [...new Set(paths.filter((path): path is string => Boolean(path)))]
 }
 
+async function discoverRepoFolders(rootPath: string): Promise<string[]> {
+  try {
+    const entries = await readdir(rootPath, { withFileTypes: true })
+    const candidates = entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => join(rootPath, entry.name))
+    const checks = await Promise.all(candidates.map(async (path) => {
+      try {
+        const gitDir = await stat(join(path, ".git"))
+        return gitDir.isDirectory() || gitDir.isFile() ? path : undefined
+      } catch {
+        return undefined
+      }
+    }))
+    return checks.filter((path): path is string => Boolean(path))
+  } catch {
+    return []
+  }
+}
+
+function filteredRepoPaths(paths: string[], query: string): string[] {
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) return paths
+  return paths.filter((path) => path.toLowerCase().includes(normalized))
+}
+
+function handleRepoPickerKey(state: AppState, key: KeyEvent, paths: string[], selectRepo: (repoPath: string) => void, exit: () => void): AppState {
+  const filtered = filteredRepoPaths(paths, state.repoQuery)
+  if (key.name === "return") {
+    const selected = filtered[clamp(state.selectedRepoIndex, 0, Math.max(0, filtered.length - 1))]
+    if (selected) selectRepo(selected)
+    return state
+  }
+  if (key.name === "escape") {
+    if (state.exitPrompt) exit()
+    return { ...state, exitPrompt: true, error: "press esc again to exit" }
+  }
+  if (key.name === "backspace" || key.name === "delete") return { ...state, repoQuery: state.repoQuery.slice(0, -1), selectedRepoIndex: 0, exitPrompt: false, error: undefined }
+  if (key.name === "up" || key.name === "k") return { ...state, selectedRepoIndex: Math.max(0, state.selectedRepoIndex - 1), exitPrompt: false }
+  if (key.name === "down" || key.name === "j") return { ...state, selectedRepoIndex: Math.min(Math.max(0, filtered.length - 1), state.selectedRepoIndex + 1), exitPrompt: false }
+  if (isTypableChar(key)) return { ...state, repoQuery: `${state.repoQuery}${key.sequence}`, selectedRepoIndex: 0, exitPrompt: false, error: undefined }
+  return state.exitPrompt ? { ...state, exitPrompt: false, error: undefined } : state
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
@@ -1114,9 +1160,9 @@ function toHistoryEditOperations(flow: HistoryListEditState): HistoryEditOperati
   })
 }
 
-async function pushForceWithLease(repoPath: string): Promise<string> {
-  const result = await runGitChecked({ repoPath, args: ["push", "--force-with-lease"] })
-  return (result.stdout || result.stderr).trim() || "Pushed with --force-with-lease"
+async function pushForce(repoPath: string): Promise<string> {
+  const result = await runGitChecked({ repoPath, args: ["push", "-f"] })
+  return (result.stdout || result.stderr).trim() || "Pushed with -f"
 }
 
 function updateSelectedHistoryEditRow(flow: HistoryListEditState, update: (row: HistoryEditDraft) => HistoryEditDraft): HistoryListEditState {

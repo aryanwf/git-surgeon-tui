@@ -1,5 +1,6 @@
 import { createCliRenderer, type KeyEvent } from "@opentui/core"
 import { getCommitDiff, searchCommits } from "./git/log"
+import { buildHistoryPreview, withScratchClone } from "./git/preview"
 import { validateRepository } from "./git/repository"
 import { getRecoveryReport } from "./git/recovery"
 import { analyzeRepositorySize } from "./git/size-analyzer"
@@ -7,6 +8,7 @@ import { createInitialState } from "./state/store"
 import type { AppState } from "./state/types"
 import { DashboardScreen } from "./tui/screens/dashboard"
 import { HistoryScreen } from "./tui/screens/history"
+import { PreviewScreen } from "./tui/screens/preview"
 import { RepoPickerScreen } from "./tui/screens/repo-picker"
 import { RecoveryScreen } from "./tui/screens/recovery"
 import { SizeAnalyzerScreen } from "./tui/screens/size-analyzer"
@@ -39,6 +41,11 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         } else if (state.screen === "recovery") {
           const report = await getRecoveryReport(repository.repoPath)
           renderer.root.add(RecoveryScreen(repository, report))
+        } else if (state.screen === "preview") {
+          const preview = await withScratchClone(repository.repoPath, (scratch) => {
+            return buildHistoryPreview({ repoPath: repository.repoPath, scratchPath: scratch.repoPath, range: "HEAD" })
+          })
+          renderer.root.add(PreviewScreen(repository, preview, 0))
         } else {
           renderer.root.add(DashboardScreen(repository))
         }
@@ -74,6 +81,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
       }
       if (key.name === "v") {
         state = { ...state, screen: "recovery" }
+        void render()
+      }
+      if (key.name === "p") {
+        state = { ...state, screen: "preview" }
         void render()
       }
     } else if (state.screen === "history") {

@@ -6,7 +6,7 @@ import { listCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
 import { GitCommandError, runGit, runGitChecked, type GitCommandResult } from "./runner"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog } from "./safety"
-import { buildHistoryPreview, type HistoryPreview } from "./preview"
+import { buildHistoryPreview, withScratchClone, type HistoryPreview } from "./preview"
 
 export type VisualRebaseAction = "pick" | "reword" | "edit" | "squash" | "fixup" | "drop" | "exec"
 
@@ -74,7 +74,13 @@ export async function visualInteractiveRebase(options: {
   const warnings = publicHistoryWarnings(state.upstream)
   const preview = await previewVisualRebase(state.repoPath, plan, warnings)
 
-  if (!options.apply) return { preview, applied: false }
+  if (!options.apply) {
+    const operationLogPath = await writePreviewLog(state, "visual-interactive-rebase", plan.baseCommit, preview.newHead, [
+      `git clone --shared --no-hardlinks ${state.repoPath} <scratch>`,
+      `git rebase -i ${plan.baseCommit}`,
+    ])
+    return { preview, applied: false, operationLogPath }
+  }
 
   const timestamp = timestampForRef()
   const backupRef = await createBackupRef(state, timestamp)
@@ -139,12 +145,9 @@ export async function buildVisualRebasePlan(repoPath: string, base: string, rows
 }
 
 async function previewVisualRebase(repoPath: string, plan: VisualRebasePlan, warnings: string[]): Promise<VisualRebasePreview> {
-  const tmp = await mkdtemp(join(tmpdir(), "gitsurgeon-preview-"))
-  const scratch = join(tmp, "repo")
-  try {
-    await runGitChecked({ args: ["clone", "--shared", "--no-hardlinks", repoPath, scratch] })
-    await executeVisualRebase(scratch, plan)
-    const historyPreview = await buildHistoryPreview({ repoPath, scratchPath: scratch, range: `${plan.baseCommit}..HEAD` })
+  return await withScratchClone(repoPath, async (scratch) => {
+    await executeVisualRebase(scratch.repoPath, plan)
+    const historyPreview = await buildHistoryPreview({ repoPath, scratchPath: scratch.repoPath, range: `${plan.baseCommit}..HEAD` })
     return {
       oldHead: historyPreview.oldHead,
       newHead: historyPreview.newHead,
@@ -163,9 +166,18 @@ async function previewVisualRebase(repoPath: string, plan: VisualRebasePlan, war
       changedCommitCount: plan.changedCommitCount,
       droppedCommitIds: plan.droppedCommitIds,
     }
-  } finally {
-    await rm(tmp, { recursive: true, force: true })
-  }
+  })
+}
+
+async function writePreviewLog(state: Awaited<ReturnType<typeof validateRepository>>, operationType: string, baseCommit: string, newHead: string, commands: string[]): Promise<string> {
+  const timestamp = timestampForRef()
+  const log = await buildOperationLog(state, operationType)
+  log.baseCommit = baseCommit
+  log.newHead = newHead
+  log.commands = commands
+  log.status = "previewed"
+  log.finishedAt = new Date().toISOString()
+  return await writeOperationLog(state, timestamp, log)
 }
 
 async function executeVisualRebase(repoPath: string, plan: VisualRebasePlan): Promise<{ commands: GitCommandResult[] }> {

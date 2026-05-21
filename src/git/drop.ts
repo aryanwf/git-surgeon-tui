@@ -6,7 +6,7 @@ import { getHeadCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
 import { GitCommandError, runGit, runGitChecked, type GitCommandResult } from "./runner"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog } from "./safety"
-import { buildHistoryPreview, historyRange, type HistoryPreview } from "./preview"
+import { buildHistoryPreview, historyRange, withScratchClone, type HistoryPreview } from "./preview"
 
 export type DropCommitPreview = {
   oldHead: string
@@ -51,7 +51,13 @@ export async function dropSingleCommit(options: { repoPath: string; sha: string;
   const warnings = publicHistoryWarnings(state.upstream)
   const preview = await previewDropCommit(state.repoPath, plan, warnings)
 
-  if (!options.apply) return { preview, applied: false }
+  if (!options.apply) {
+    const operationLogPath = await writePreviewLog(state, "drop-single-commit", plan.baseCommit, preview.newHead, [
+      `git clone --shared --no-hardlinks ${state.repoPath} <scratch>`,
+      plan.root ? "git rebase -i --root" : `git rebase -i ${plan.baseCommit}`,
+    ])
+    return { preview, applied: false, operationLogPath }
+  }
 
   const timestamp = timestampForRef()
   const backupRef = await createBackupRef(state, timestamp)
@@ -103,13 +109,10 @@ export async function buildDropCommitPlan(repoPath: string, sha: string): Promis
 }
 
 async function previewDropCommit(repoPath: string, plan: DropCommitPlan, warnings: string[]): Promise<DropCommitPreview> {
-  const tmp = await mkdtemp(join(tmpdir(), "gitsurgeon-preview-"))
-  const scratch = join(tmp, "repo")
-  try {
-    await runGitChecked({ args: ["clone", "--shared", "--no-hardlinks", repoPath, scratch] })
+  return await withScratchClone(repoPath, async (scratch) => {
     const targetDiff = (await runGitChecked({ repoPath, args: ["show", "--stat", "--patch", "--format=fuller", plan.target.sha] })).stdout
-    await executeDropCommitRewrite(scratch, plan)
-    const historyPreview = await buildHistoryPreview({ repoPath, scratchPath: scratch, range: historyRange(plan.baseCommit, plan.root) })
+    await executeDropCommitRewrite(scratch.repoPath, plan)
+    const historyPreview = await buildHistoryPreview({ repoPath, scratchPath: scratch.repoPath, range: historyRange(plan.baseCommit, plan.root) })
     return {
       oldHead: historyPreview.oldHead,
       newHead: historyPreview.newHead,
@@ -128,9 +131,18 @@ async function previewDropCommit(repoPath: string, plan: DropCommitPlan, warning
       warnings,
       changedCommitCount: plan.changedCommitCount,
     }
-  } finally {
-    await rm(tmp, { recursive: true, force: true })
-  }
+  })
+}
+
+async function writePreviewLog(state: Awaited<ReturnType<typeof validateRepository>>, operationType: string, baseCommit: string | undefined, newHead: string, commands: string[]): Promise<string> {
+  const timestamp = timestampForRef()
+  const log = await buildOperationLog(state, operationType)
+  log.baseCommit = baseCommit
+  log.newHead = newHead
+  log.commands = commands
+  log.status = "previewed"
+  log.finishedAt = new Date().toISOString()
+  return await writeOperationLog(state, timestamp, log)
 }
 
 async function executeDropCommitRewrite(repoPath: string, plan: DropCommitPlan): Promise<{ commands: GitCommandResult[] }> {

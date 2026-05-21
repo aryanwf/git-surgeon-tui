@@ -2,6 +2,7 @@ import type { RepositoryState } from "../git/repository"
 
 export type AppScreen = "repo-picker" | "dashboard"
   | "history"
+  | "preview"
   | "size-analyzer"
   | "recovery"
 

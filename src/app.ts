@@ -48,7 +48,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   if (options.repoPath) void rememberRecentRepo(options.repoPath).catch(() => {})
 
   const render = async () => {
-    for (const child of renderer.root.getChildren()) child.destroyRecursively()
+    const mount = (screen: Parameters<typeof renderer.root.add>[0]) => {
+      for (const child of renderer.root.getChildren()) child.destroyRecursively()
+      renderer.root.add(screen)
+    }
     if (state.repoPath && state.screen !== "repo-picker") {
       try {
         const repository = await validateRepository(state.repoPath)
@@ -65,23 +68,23 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           const scrollOffset = visibleWindowStart(commits.length, selectedIndex, state.historyScrollOffset, 18)
           const diff = commits[selectedIndex] ? await getCommitDiff(repository.repoPath, commits[selectedIndex].sha) : ""
           state = { ...state, selectedCommitIndex: selectedIndex, historyScrollOffset: scrollOffset, lastSelectedCommit: commits[selectedIndex] }
-          renderer.root.add(HistoryScreen(repository, commits, selectedIndex, scrollOffset, state.historyQuery, diff))
+          mount(HistoryScreen(repository, commits, selectedIndex, scrollOffset, state.historyQuery, diff))
         } else if (state.screen === "size-analyzer") {
           const result = await analyzeRepositorySize({ repoPath: repository.repoPath, limit: 20 })
-          renderer.root.add(SizeAnalyzerScreen(repository, result))
+          mount(SizeAnalyzerScreen(repository, result))
         } else if (state.screen === "recovery") {
           const report = await getRecoveryReport(repository.repoPath)
-          renderer.root.add(RecoveryScreen(repository, report, { path: state.exportReportPath, error: state.exportReportError }))
+          mount(RecoveryScreen(repository, report, { path: state.exportReportPath, error: state.exportReportError }))
         } else if (state.screen === "help") {
-          renderer.root.add(HelpScreen(repository))
+          mount(HelpScreen(repository))
         } else if (state.screen === "preview") {
           const preview = await withScratchClone(repository.repoPath, (scratch) => {
             return buildHistoryPreview({ repoPath: repository.repoPath, scratchPath: scratch.repoPath, range: "HEAD" })
           })
-          renderer.root.add(PreviewScreen(repository, preview, 0))
+          mount(PreviewScreen(repository, preview, 0))
         } else if (state.screen === "conflict") {
           const conflict = await getConflictReport(repository.repoPath)
-          renderer.root.add(ConflictScreen(repository, conflict))
+          mount(ConflictScreen(repository, conflict))
         } else if (state.screen === "rewrite-reword") {
           const flow = state.rewriteFlow as RewriteRewordState
           if (flow.step === "preview" && !flow.preview) {
@@ -124,7 +127,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             void render()
             return
           }
-          renderer.root.add(RewordFlowScreen(repository, flow))
+          mount(RewordFlowScreen(repository, flow))
         } else if (state.screen === "rewrite-drop") {
           const flow = state.rewriteFlow as RewriteDropState
           if (flow.step === "preview" && !flow.preview) {
@@ -159,7 +162,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             void render()
             return
           }
-          renderer.root.add(DropCommitFlowScreen(repository, flow))
+          mount(DropCommitFlowScreen(repository, flow))
         } else if (state.screen === "rewrite-author") {
           const flow = state.rewriteFlow as RewriteAuthorState
           if (flow.step === "preview" && !flow.preview) {
@@ -207,7 +210,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             void render()
             return
           }
-          renderer.root.add(ChangeAuthorFlowScreen(repository, flow))
+          mount(ChangeAuthorFlowScreen(repository, flow))
         } else if (state.screen === "rewrite-date") {
           const flow = state.rewriteFlow as RewriteDateState
           if (flow.step === "preview" && !flow.preview) {
@@ -253,7 +256,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             void render()
             return
           }
-          renderer.root.add(ChangeDateFlowScreen(repository, flow))
+          mount(ChangeDateFlowScreen(repository, flow))
         } else if (state.screen === "rewrite-history-list") {
           const flow = state.rewriteFlow as HistoryListEditState
           if (flow.step === "form" && !flow.rows) {
@@ -275,14 +278,15 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           if (flow.step === "applying") {
             try {
               const result = await editCommitHistory({ repoPath: repository.repoPath, operations: toHistoryEditOperations(flow), apply: true })
-              state = { ...state, rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined } }
+              const pushOutput = repository.upstream ? await pushForceWithLease(repository.repoPath) : undefined
+              state = { ...state, rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput, error: undefined } }
             } catch (err) {
               state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
             }
             void render()
             return
           }
-          renderer.root.add(HistoryListEditFlowScreen(repository, flow))
+          mount(HistoryListEditFlowScreen(repository, flow))
         } else if (state.screen === "rewrite-split") {
           const flow = state.rewriteFlow as SplitCommitState
           if (flow.step === "form" && !flow.changedPaths) {
@@ -318,7 +322,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             void render()
             return
           }
-          renderer.root.add(SplitCommitFlowScreen(repository, flow))
+          mount(SplitCommitFlowScreen(repository, flow))
         } else if (state.screen === "rewrite-visual-rebase") {
           const flow = state.rewriteFlow as VisualRebaseState
           if (flow.step === "form" && !flow.rows) {
@@ -375,17 +379,17 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             void render()
             return
           }
-          renderer.root.add(VisualRebaseFlowScreen(repository, flow))
+          mount(VisualRebaseFlowScreen(repository, flow))
         } else {
-          renderer.root.add(DashboardScreen(repository))
+          mount(DashboardScreen(repository))
         }
       } catch (error) {
         state = { ...state, screen: "repo-picker", error: error instanceof Error ? error.message : String(error) }
-        renderer.root.add(RepoPickerScreen(pickerPaths, selectRepo, state.error))
+        mount(RepoPickerScreen(pickerPaths, selectRepo, state.error))
       }
     } else {
-      if (state.screen === "help") renderer.root.add(HelpScreen())
-      else renderer.root.add(RepoPickerScreen(pickerPaths, selectRepo, state.error))
+      if (state.screen === "help") mount(HelpScreen())
+      else mount(RepoPickerScreen(pickerPaths, selectRepo, state.error))
     }
   }
 
@@ -1108,6 +1112,11 @@ function toHistoryEditOperations(flow: HistoryListEditState): HistoryEditOperati
       dateMode: row.dateMode,
     }]
   })
+}
+
+async function pushForceWithLease(repoPath: string): Promise<string> {
+  const result = await runGitChecked({ repoPath, args: ["push", "--force-with-lease"] })
+  return (result.stdout || result.stderr).trim() || "Pushed with --force-with-lease"
 }
 
 function updateSelectedHistoryEditRow(flow: HistoryListEditState, update: (row: HistoryEditDraft) => HistoryEditDraft): HistoryListEditState {

@@ -151,7 +151,7 @@ export async function buildHistoryEditPlan(repoPath: string, operations: History
   const descendants = firstDroppedIndex < 0 ? [] : rangeCommits.slice(firstDroppedIndex + 1)
   const todo = rangeCommits.map((commit) => {
     const edit = editMap.get(commit.sha)
-    if (!edit) return `pick ${commit.sha} ${commit.subject}`
+    if (!edit) return `edit ${commit.sha} ${commit.subject}`
     if (edit.drop) return `drop ${commit.sha} ${commit.subject}`
     return `edit ${commit.sha} ${commit.subject}`
   }).join("\n") + "\n"
@@ -200,7 +200,8 @@ async function executeHistoryEdit(repoPath: string, plan: HistoryEditPlan): Prom
   const todoPath = join(helperDir, "todo")
   const editorPath = join(helperDir, "sequence-editor.sh")
   const commands: GitCommandResult[] = []
-  const editQueue = plan.edits.filter((edit) => !edit.drop)
+  const editMap = new Map(plan.edits.map((edit) => [edit.sha, edit]))
+  const editQueue = plan.rangeCommits.filter((commit) => !editMap.get(commit.sha)?.drop)
   const oldToNew: Record<string, string> = {}
 
   try {
@@ -216,18 +217,19 @@ async function executeHistoryEdit(repoPath: string, plan: HistoryEditPlan): Prom
 
     while (await isRebaseInProgress(repoPath)) {
       if (await hasConflicts(repoPath)) throw new GitCommandError("Rebase stopped with conflicts", commands.at(-1) ?? rebaseStart)
-      const edit = editQueue.shift()
-      if (!edit) {
+      const commit = editQueue.shift()
+      if (!commit) {
         const cont = await runGit({ repoPath, args: ["rebase", "--continue"], env: { GIT_EDITOR: ":" }, timeoutMs: 120_000 })
         commands.push(cont)
         if (cont.exitCode !== 0 && (await isRebaseInProgress(repoPath))) throw new GitCommandError("Rebase continue failed", cont)
         continue
       }
 
-      const amend = await runGit({ repoPath, args: await amendArgs(helperDir, edit), env: amendEnv(edit), timeoutMs: 120_000 })
+      const edit = editMap.get(commit.sha)
+      const amend = await runGit({ repoPath, args: await amendArgs(helperDir, commit, edit), env: amendEnv(commit, edit), timeoutMs: 120_000 })
       commands.push(amend)
       if (amend.exitCode !== 0) throw new GitCommandError("Commit amend failed during history edit", amend)
-      oldToNew[edit.sha] = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
+      if (edit) oldToNew[edit.sha] = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
 
       const cont = await runGit({ repoPath, args: ["rebase", "--continue"], env: { GIT_EDITOR: ":" }, timeoutMs: 120_000 })
       commands.push(cont)
@@ -241,27 +243,27 @@ async function executeHistoryEdit(repoPath: string, plan: HistoryEditPlan): Prom
   }
 }
 
-async function amendArgs(helperDir: string, edit: PlannedEdit): Promise<string[]> {
+async function amendArgs(helperDir: string, commit: CommitSummary, edit?: PlannedEdit): Promise<string[]> {
   const args = ["commit", "--amend"]
-  if (edit.message !== undefined) {
-    const messagePath = join(helperDir, `${edit.sha}.message`)
+  if (edit?.message !== undefined) {
+    const messagePath = join(helperDir, `${commit.sha}.message`)
     await Bun.write(messagePath, edit.message)
     args.push("-F", messagePath)
     if (edit.message === "") args.push("--allow-empty-message")
   } else {
     args.push("--no-edit")
   }
-  if (edit.date && (edit.dateMode === "author" || edit.dateMode === "both")) args.push(`--date=${edit.date}`)
+  if (edit?.date && (edit.dateMode === "author" || edit.dateMode === "both")) args.push(`--date=${edit.date}`)
   return args
 }
 
-function amendEnv(edit: PlannedEdit): Record<string, string> {
+function amendEnv(commit: CommitSummary, edit?: PlannedEdit): Record<string, string> {
   const env = {
-    GIT_COMMITTER_NAME: edit.commit.committerName,
-    GIT_COMMITTER_EMAIL: edit.commit.committerEmail,
-    GIT_COMMITTER_DATE: edit.commit.committerDate,
+    GIT_COMMITTER_NAME: commit.committerName,
+    GIT_COMMITTER_EMAIL: commit.committerEmail,
+    GIT_COMMITTER_DATE: commit.committerDate,
   }
-  if (edit.date && (edit.dateMode === "committer" || edit.dateMode === "both")) env.GIT_COMMITTER_DATE = edit.date
+  if (edit?.date && (edit.dateMode === "committer" || edit.dateMode === "both")) env.GIT_COMMITTER_DATE = edit.date
   return env
 }
 

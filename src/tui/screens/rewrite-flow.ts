@@ -452,7 +452,7 @@ function HistoryListUpstreamConfirmScreen(state: RepositoryState, flow: HistoryL
       Box(
         { flexDirection: "column", borderStyle: "single", borderColor: theme.danger, padding: 1 },
         Text({ content: `Current branch tracks ${state.upstream}.`, fg: theme.danger }),
-        Text({ content: "This applies a local rewrite only. Git Surgeon will not push or force-push.", fg: theme.text }),
+        Text({ content: "This applies the local rewrite, then pushes with --force-with-lease.", fg: theme.text }),
         Text({ content: `Type exactly: ${phrase}`, fg: theme.accent }),
       ),
       Text({ content: `${flow.upstreamConfirmation}|`, fg: theme.text }),
@@ -481,6 +481,7 @@ function HistoryListResultScreen(state: RepositoryState, flow: HistoryListEditSt
     Box(
       { flexDirection: "column", gap: 1 },
       Text({ content: "Combined history edit applied successfully.", fg: theme.ok }),
+      ...(flow.pushOutput ? [Text({ content: `Remote update: ${flow.pushOutput}`, fg: theme.ok })] : []),
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
       ...(flow.stashedRef ? [Text({ content: `Local changes were stashed: ${flow.stashedRef}`, fg: theme.muted })] : []),

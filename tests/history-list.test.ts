@@ -60,6 +60,7 @@ test("OpenTUI test renderer captures the scroll-windowed history screen", async 
 test("applies a batched list edit with rename plus drop plus date change", async () => {
   const { repoPath, commits } = await createFixtureRepo()
   const oldHead = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
+  const originalFirstDate = await commitDates(repoPath, commits[0], "%aI%x00%cI")
 
   const result = await editCommitHistory({
     repoPath,
@@ -80,6 +81,7 @@ test("applies a batched list edit with rename plus drop plus date change", async
   expect(result.preview.droppedCommitIds).toEqual([commits[1]])
   expect(Object.keys(result.preview.oldToNew)).toHaveLength(2)
   expect(await commitSubjects(repoPath)).toEqual(["renamed first", "third commit"])
+  expect(await commitDates(repoPath, "HEAD~1", "%aI%x00%cI")).toBe(originalFirstDate)
   expect(await commitDates(repoPath, "HEAD", "%aI%x00%cI")).toBe("2026-05-20T10:30:00Z\x002026-05-20T10:30:00Z")
   const backupHead = (await runGitChecked({ repoPath, args: ["rev-parse", result.backupRef!] })).stdout.trim()
   expect(backupHead).toBe(oldHead)

@@ -15,14 +15,15 @@ export async function createFixtureRepo(options: FixtureRepoOptions = {}): Promi
   await runGitChecked({ repoPath, args: ["config", "user.email", "test@example.com"] })
 
   const commits: string[] = []
-  for (const [file, content, message] of [
+  for (const [index, [file, content, message]] of ([
     ["one.txt", "one", "first commit"],
     ["two.txt", "two", "second commit"],
     ["three.txt", "three", "third commit"],
-  ].slice(0, options.commitCount ?? 3) as [string, string, string][]) {
+  ].slice(0, options.commitCount ?? 3) as [string, string, string][]).entries()) {
     await Bun.write(join(repoPath, file), `${content}\n`)
     await runGitChecked({ repoPath, args: ["add", file] })
-    await runGitChecked({ repoPath, args: ["commit", "-m", message] })
+    const date = `2026-05-20T10:0${index}:00Z`
+    await runGitChecked({ repoPath, args: ["commit", "-m", message], env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } })
     commits.push((await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim())
   }
 

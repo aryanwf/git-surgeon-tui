@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { runGit, runGitChecked, GitCommandError, type GitCommandResult } from "./runner"
-import { getHeadCommits } from "./log"
+import { getHeadCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog, type OperationLog } from "./safety"
 import { buildHistoryPreview, historyRange, type HistoryPreview } from "./preview"
@@ -42,10 +42,15 @@ export type RenameResult = {
 type RewritePlan = {
   baseCommit?: string
   root: boolean
-  selected: RenameCommitMessage[]
+  selected: SelectedRename[]
+  rangeCommits: CommitSummary[]
   todo: string
   range: string
   changedCommitCount: number
+}
+
+type SelectedRename = RenameCommitMessage & {
+  commit: CommitSummary
 }
 
 export async function renameOldCommitMessages(options: {
@@ -96,7 +101,7 @@ export async function buildRenamePlan(repoPath: string, messages: RenameCommitMe
     if (message.message === "" && !message.allowEmptyMessage) {
       throw new Error(`Empty message for ${commit.shortSha} requires allowEmptyMessage`)
     }
-    return { message: { ...message, sha: commit.sha }, index: commits.findIndex((candidate) => candidate.sha === commit.sha) }
+    return { message: { ...message, sha: commit.sha, commit }, index: commits.findIndex((candidate) => candidate.sha === commit.sha) }
   })
   const selected = selectedWithIndex.sort((left, right) => left.index - right.index).map((item) => item.message)
   const selectedShas = new Set(selected.map((message) => message.sha))
@@ -111,13 +116,14 @@ export async function buildRenamePlan(repoPath: string, messages: RenameCommitMe
   if (mergeInRange) throw new Error(`Selected range contains merge commit ${mergeInRange.shortSha}; --rebase-merges is not enabled in v1`)
 
   const todo = rangeCommits
-    .map((commit) => `${selectedShas.has(commit.sha) ? "edit" : "pick"} ${commit.sha} ${commit.subject}`)
+    .map((commit) => `edit ${commit.sha} ${commit.subject}`)
     .join("\n") + "\n"
 
   return {
     baseCommit,
     root,
     selected,
+    rangeCommits,
     todo,
     range: root ? "HEAD" : `${baseCommit}..HEAD`,
     changedCommitCount: rangeCommits.length,
@@ -158,6 +164,7 @@ async function executeRenameRewrite(repoPath: string, plan: RewritePlan): Promis
   const editorPath = join(helperDir, "sequence-editor.sh")
   const commands: GitCommandResult[] = []
   const rewrittenCommits: string[] = []
+  const selectedBySha = new Map(plan.selected.map((selected) => [selected.sha, selected]))
 
   try {
     await Bun.write(todoPath, plan.todo)
@@ -170,16 +177,14 @@ async function executeRenameRewrite(repoPath: string, plan: RewritePlan): Promis
     commands.push(rebaseStart)
     if (rebaseStart.exitCode !== 0 && !(await isRebaseInProgress(repoPath))) throw new GitCommandError("Interactive rebase failed to start", rebaseStart)
 
-    for (const selected of plan.selected) {
+    for (const commit of plan.rangeCommits) {
       if (!(await isRebaseInProgress(repoPath))) break
-      const messagePath = join(helperDir, `${selected.sha}.message`)
-      await Bun.write(messagePath, selected.message)
-      const amendArgs = ["commit", "--amend", "-F", messagePath]
-      if (selected.message === "") amendArgs.push("--allow-empty-message")
-      const amend = await runGit({ repoPath, args: amendArgs, timeoutMs: 120_000 })
+      const selected = selectedBySha.get(commit.sha)
+      const amendArgs = await renameAmendArgs(helperDir, commit, selected)
+      const amend = await runGit({ repoPath, args: amendArgs, env: amendEnv(commit), timeoutMs: 120_000 })
       commands.push(amend)
       if (amend.exitCode !== 0) throw new GitCommandError("Commit amend failed during rename flow", amend)
-      rewrittenCommits.push((await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim())
+      if (selected) rewrittenCommits.push((await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim())
 
       const cont = await runGit({ repoPath, args: ["rebase", "--continue"], env: { GIT_EDITOR: ":" }, timeoutMs: 120_000 })
       commands.push(cont)
@@ -200,6 +205,24 @@ async function executeRenameRewrite(repoPath: string, plan: RewritePlan): Promis
     return { commands, rewrittenCommits }
   } finally {
     await rm(helperDir, { recursive: true, force: true })
+  }
+}
+
+async function renameAmendArgs(helperDir: string, commit: CommitSummary, selected?: SelectedRename): Promise<string[]> {
+  if (!selected) return ["commit", "--amend", "--no-edit"]
+
+  const messagePath = join(helperDir, `${commit.sha}.message`)
+  await Bun.write(messagePath, selected.message)
+  const args = ["commit", "--amend", "-F", messagePath]
+  if (selected.message === "") args.push("--allow-empty-message")
+  return args
+}
+
+function amendEnv(commit: CommitSummary): Record<string, string> {
+  return {
+    GIT_COMMITTER_NAME: commit.committerName,
+    GIT_COMMITTER_EMAIL: commit.committerEmail,
+    GIT_COMMITTER_DATE: commit.committerDate,
   }
 }
 

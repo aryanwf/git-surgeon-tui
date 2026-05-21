@@ -137,6 +137,7 @@ export type HistoryListEditState = {
   preview?: HistoryEditPreview
   backupRef?: string
   operationLogPath?: string
+  pushOutput?: string
   error?: string
 }
 

@@ -46,6 +46,7 @@ export type RewriteRewordState = {
   selectedAuthorDate: string
   // editable inputs
   newMessage: string
+  newMessageCursor: number
   // populated after scratch run
   preview?: RenamePreview
   backupRef?: string
@@ -85,7 +86,9 @@ export type RewriteAuthorState = {
   mode: "author" | "committer" | "both"
   activeField: "mode" | "name" | "email"
   newName: string
+  newNameCursor: number
   newEmail: string
+  newEmailCursor: number
   // populated after scratch run
   preview?: ChangeCommitAuthorPreview
   backupRef?: string
@@ -106,6 +109,7 @@ export type RewriteDateState = {
   mode: "author" | "committer" | "both"
   activeField: "mode" | "date"
   newDate: string
+  newDateCursor: number
   // populated after scratch run
   preview?: ChangeCommitDatePreview
   backupRef?: string
@@ -121,7 +125,9 @@ export type VisualRebaseTodoRow = {
   subject: string
   action: VisualRebaseAction
   message?: string
+  messageCursor?: number
   command?: string
+  commandCursor?: number
 }
 
 export type HistoryEditDraft = {
@@ -130,8 +136,10 @@ export type HistoryEditDraft = {
   subject: string
   authorDate: string
   message?: string
+  messageCursor?: number
   drop?: boolean
   date?: string
+  dateCursor?: number
   dateMode?: DateChangeMode
 }
 
@@ -144,6 +152,7 @@ export type HistoryListEditState = {
   previewPane: "oldGraph" | "newGraph" | "metadata" | "todo" | "diff"
   previewScrollOffset: number
   upstreamConfirmation: string
+  upstreamConfirmationCursor: number
   stashedRef?: string
   preview?: HistoryEditPreview
   backupRef?: string
@@ -155,6 +164,7 @@ export type HistoryListEditState = {
 
 export type SplitCommitPartDraft = {
   message: string
+  messageCursor: number
 }
 
 export type SplitCommitState = {
@@ -208,9 +218,11 @@ export type AppState = {
   error?: string
   commandLog: string[]
   repoQuery: string
+  repoQueryCursor: number
   selectedRepoIndex: number
   exitPrompt: boolean
   historyQuery: string
+  historyQueryCursor: number
   selectedCommitIndex: number
   historyScrollOffset: number
   // Populated during history screen render so rewrite flow triggers have the commit data.

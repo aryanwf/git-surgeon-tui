@@ -11,14 +11,14 @@ export function buildRepoPickerOptions(paths: string[]): RepoPickerOption[] {
   }))
 }
 
-export function RepoPickerScreen(paths: string[], query: string, selectedIndex: number, error?: string) {
+export function RepoPickerScreen(paths: string[], query: string, queryCursor: number, selectedIndex: number, error?: string) {
   const start = visibleWindowStart(paths.length, selectedIndex, 10)
   const visible = buildRepoPickerOptions(paths).slice(start, start + 10)
 
   return AppFrame(
     "Select Repository",
     Text({ content: "Search repositories by path or folder name. Pass --repo <path> to skip this screen.", fg: theme.muted }),
-    Text({ content: `Search: ${query || "(type to filter)"}`, fg: theme.accent }),
+    Text({ content: `Search: ${query ? editableText(query, queryCursor) : "|(type to filter)"}`, fg: theme.accent }),
     Box(
       { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
       ...(visible.length > 0
@@ -28,9 +28,14 @@ export function RepoPickerScreen(paths: string[], query: string, selectedIndex: 
         })
         : [Text({ content: "No repositories match the current search", fg: theme.muted })]),
     ),
-    Text({ content: "type: search  backspace: delete  enter: open selected repo  escape: exit prompt", fg: theme.muted }),
+    Text({ content: "type: search  left/right: move cursor  backspace/delete: edit  enter: open repo", fg: theme.muted }),
     Text({ content: error ?? "", fg: theme.danger }),
   )
+}
+
+function editableText(value: string, cursor: number): string {
+  const index = Math.min(Math.max(0, cursor), value.length)
+  return `${value.slice(0, index)}|${value.slice(index)}`
 }
 
 function visibleWindowStart(total: number, selectedIndex: number, limit: number): number {

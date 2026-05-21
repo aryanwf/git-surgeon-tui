@@ -71,7 +71,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           const scrollOffset = visibleWindowStart(commits.length, selectedIndex, state.historyScrollOffset, 18)
           const diff = commits[selectedIndex] ? await getCommitDiff(repository.repoPath, commits[selectedIndex].sha) : ""
           state = { ...state, selectedCommitIndex: selectedIndex, historyScrollOffset: scrollOffset, lastSelectedCommit: commits[selectedIndex] }
-          mount(HistoryScreen(repository, commits, selectedIndex, scrollOffset, state.historyQuery, diff))
+          mount(HistoryScreen(repository, commits, selectedIndex, scrollOffset, state.historyQuery, state.historyQueryCursor, diff))
         } else if (state.screen === "size-analyzer") {
           const result = await analyzeRepositorySize({ repoPath: repository.repoPath, limit: 20 })
           mount(SizeAnalyzerScreen(repository, result))
@@ -404,16 +404,16 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         }
       } catch (error) {
         state = { ...state, screen: "repo-picker", error: error instanceof Error ? error.message : String(error) }
-        mount(RepoPickerScreen(filteredRepoPaths(pickerPaths, state.repoQuery), state.repoQuery, state.selectedRepoIndex, state.error))
+        mount(RepoPickerScreen(filteredRepoPaths(pickerPaths, state.repoQuery), state.repoQuery, state.repoQueryCursor, state.selectedRepoIndex, state.error))
       }
     } else {
       if (state.screen === "help") mount(HelpScreen())
-      else mount(RepoPickerScreen(filteredRepoPaths(pickerPaths, state.repoQuery), state.repoQuery, state.selectedRepoIndex, state.error))
+      else mount(RepoPickerScreen(filteredRepoPaths(pickerPaths, state.repoQuery), state.repoQuery, state.repoQueryCursor, state.selectedRepoIndex, state.error))
     }
   }
 
   const selectRepo = (repoPath: string) => {
-    state = { ...state, screen: "dashboard", repoPath, repoQuery: "", selectedRepoIndex: 0, exitPrompt: false, exportReportPath: undefined, exportReportError: undefined }
+    state = { ...state, screen: "dashboard", repoPath, repoQuery: "", repoQueryCursor: 0, selectedRepoIndex: 0, exitPrompt: false, exportReportPath: undefined, exportReportError: undefined }
     void rememberRecentRepo(repoPath).catch(() => {})
     void render()
   }
@@ -428,14 +428,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
     const clearExitPrompt = key.name !== "escape" && state.exitPrompt
 
     // Global shortcuts
-    if (key.name === "q") {
-      renderer.destroy()
-      return
-    }
     if (key.name === "escape") {
       if (state.screen === "dashboard" && state.exitPrompt) { renderer.destroy(); return }
       if (state.screen === "dashboard") state = { ...state, exitPrompt: true }
-      else state = { ...state, screen: "dashboard", rewriteFlow: undefined, exitPrompt: false }
+      else state = backState(state)
       void render()
       return
     }
@@ -547,13 +543,9 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         void render()
         return
       }
-      if (key.name === "backspace" || key.name === "delete") {
-        state = { ...state, rewriteFlow: { ...flow, newMessage: flow.newMessage.slice(0, -1) } }
-        void render()
-        return
-      }
-      if (isTypableChar(key)) {
-        state = { ...state, rewriteFlow: { ...flow, newMessage: `${flow.newMessage}${key.sequence}` } }
+      const edit = editText(flow.newMessage, flow.newMessageCursor, key)
+      if (edit) {
+        state = { ...state, rewriteFlow: { ...flow, newMessage: edit.value, newMessageCursor: edit.cursor } }
         void render()
         return
       }
@@ -607,41 +599,38 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         return
       }
       if (key.name === "tab") {
-        const fields = ["name", "email"] as const
-        const idx = fields.indexOf(flow.activeField as "name" | "email")
+        const fields = ["name", "email", "mode"] as const
+        const idx = fields.indexOf(flow.activeField)
         const next = fields[(idx + 1) % fields.length]
         state = { ...state, rewriteFlow: { ...flow, activeField: next } }
         void render()
         return
       }
-      if (key.name === "left") {
+      if (flow.activeField === "mode" && key.name === "left") {
         const modes = ["author", "committer", "both"] as const
         const idx = modes.indexOf(flow.mode)
         state = { ...state, rewriteFlow: { ...flow, mode: modes[Math.max(0, idx - 1)] } }
         void render()
         return
       }
-      if (key.name === "right") {
+      if (flow.activeField === "mode" && key.name === "right") {
         const modes = ["author", "committer", "both"] as const
         const idx = modes.indexOf(flow.mode)
         state = { ...state, rewriteFlow: { ...flow, mode: modes[Math.min(modes.length - 1, idx + 1)] } }
         void render()
         return
       }
-      if (key.name === "backspace" || key.name === "delete") {
+      const editTarget = flow.activeField === "name"
+        ? { value: flow.newName, cursor: flow.newNameCursor }
+        : flow.activeField === "email"
+          ? { value: flow.newEmail, cursor: flow.newEmailCursor }
+          : undefined
+      const edit = editTarget ? editText(editTarget.value, editTarget.cursor, key) : undefined
+      if (edit) {
         if (flow.activeField === "name") {
-          state = { ...state, rewriteFlow: { ...flow, newName: flow.newName.slice(0, -1) } }
+          state = { ...state, rewriteFlow: { ...flow, newName: edit.value, newNameCursor: edit.cursor } }
         } else {
-          state = { ...state, rewriteFlow: { ...flow, newEmail: flow.newEmail.slice(0, -1) } }
-        }
-        void render()
-        return
-      }
-      if (isTypableChar(key)) {
-        if (flow.activeField === "name") {
-          state = { ...state, rewriteFlow: { ...flow, newName: `${flow.newName}${key.sequence}` } }
-        } else {
-          state = { ...state, rewriteFlow: { ...flow, newEmail: `${flow.newEmail}${key.sequence}` } }
+          state = { ...state, rewriteFlow: { ...flow, newEmail: edit.value, newEmailCursor: edit.cursor } }
         }
         void render()
         return
@@ -675,27 +664,28 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         void render()
         return
       }
-      if (key.name === "left") {
+      if (key.name === "tab") {
+        state = { ...state, rewriteFlow: { ...flow, activeField: flow.activeField === "date" ? "mode" : "date" } }
+        void render()
+        return
+      }
+      if (flow.activeField === "mode" && key.name === "left") {
         const modes = ["author", "committer", "both"] as const
         const idx = modes.indexOf(flow.mode)
         state = { ...state, rewriteFlow: { ...flow, mode: modes[Math.max(0, idx - 1)] } }
         void render()
         return
       }
-      if (key.name === "right") {
+      if (flow.activeField === "mode" && key.name === "right") {
         const modes = ["author", "committer", "both"] as const
         const idx = modes.indexOf(flow.mode)
         state = { ...state, rewriteFlow: { ...flow, mode: modes[Math.min(modes.length - 1, idx + 1)] } }
         void render()
         return
       }
-      if (key.name === "backspace" || key.name === "delete") {
-        state = { ...state, rewriteFlow: { ...flow, newDate: flow.newDate.slice(0, -1) } }
-        void render()
-        return
-      }
-      if (isTypableChar(key)) {
-        state = { ...state, rewriteFlow: { ...flow, newDate: `${flow.newDate}${key.sequence}` } }
+      const edit = flow.activeField === "date" ? editText(flow.newDate, flow.newDateCursor, key) : undefined
+      if (edit) {
+        state = { ...state, rewriteFlow: { ...flow, newDate: edit.value, newDateCursor: edit.cursor } }
         void render()
         return
       }
@@ -742,24 +732,30 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           return
         }
         if (key.name === "left" || key.name === "right") {
+          const field = flow.activeField
+          state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => editHistoryRowText(row, field, key)) }
+          void render()
+          return
+        }
+        if (flow.activeField === "date" && (key.sequence === "[" || key.sequence === "]")) {
           const modes = ["author", "committer", "both"] as const
           const selected = rows[flow.selectedRowIndex]
-          if (!selected || flow.activeField !== "date") return
+          if (!selected) return
           const idx = modes.indexOf(selected.dateMode ?? "both")
-          const next = modes[clamp(idx + (key.name === "left" ? -1 : 1), 0, modes.length - 1)]
+          const next = modes[clamp(idx + (key.sequence === "[" ? -1 : 1), 0, modes.length - 1)]
           state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => ({ ...row, dateMode: next })) }
           void render()
           return
         }
         if (key.name === "backspace" || key.name === "delete") {
           const field = flow.activeField
-          state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => editHistoryRowText(row, field, -1)) }
+          state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => editHistoryRowText(row, field, key)) }
           void render()
           return
         }
         if (isTypableChar(key)) {
           const field = flow.activeField
-          state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => editHistoryRowText(row, field, key.sequence)) }
+          state = { ...state, rewriteFlow: updateSelectedHistoryEditRow(flow, (row) => editHistoryRowText(row, field, key)) }
           void render()
           return
         }
@@ -838,7 +834,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
       }
       if (key.name === "return") {
         state = state.repository?.upstream
-          ? { ...state, rewriteFlow: { ...flow, step: "upstream-confirm", upstreamConfirmation: "", error: undefined } }
+          ? { ...state, rewriteFlow: { ...flow, step: "upstream-confirm", upstreamConfirmation: "", upstreamConfirmationCursor: 0, error: undefined } }
           : { ...state, rewriteFlow: { ...flow, step: "applying" } }
         void render()
       }
@@ -854,14 +850,11 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         void render()
         return
       }
-      if (key.name === "backspace" || key.name === "delete") {
-        state = { ...state, rewriteFlow: { ...flow, upstreamConfirmation: flow.upstreamConfirmation.slice(0, -1) } }
+      const edit = editText(flow.upstreamConfirmation, flow.upstreamConfirmationCursor, key)
+      if (edit) {
+        state = { ...state, rewriteFlow: { ...flow, upstreamConfirmation: edit.value, upstreamConfirmationCursor: edit.cursor } }
         void render()
         return
-      }
-      if (isTypableChar(key)) {
-        state = { ...state, rewriteFlow: { ...flow, upstreamConfirmation: `${flow.upstreamConfirmation}${key.sequence}` } }
-        void render()
       }
     }
   }
@@ -887,12 +880,13 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           return
         }
         if (key.name === "backspace" || key.name === "delete") {
-          state = { ...state, rewriteFlow: updateSelectedSplitPart(flow, (message) => message.slice(0, -1)) }
+          state = { ...state, rewriteFlow: updateSelectedSplitPart(flow, key) }
           void render()
           return
         }
-        if (isTypableChar(key)) {
-          state = { ...state, rewriteFlow: updateSelectedSplitPart(flow, (message) => `${message}${key.sequence}`) }
+        const selectedPart = flow.parts[flow.selectedPartIndex]
+        if (selectedPart && editText(selectedPart.message, selectedPart.messageCursor, key)) {
+          state = { ...state, rewriteFlow: updateSelectedSplitPart(flow, key) }
           void render()
           return
         }
@@ -929,7 +923,8 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         return
       }
       if (key.sequence === "n") {
-        state = { ...state, rewriteFlow: { ...flow, parts: [...flow.parts, { message: `${flow.selectedSubject} (part ${flow.parts.length + 1})` }], selectedPartIndex: flow.parts.length } }
+        const message = `${flow.selectedSubject} (part ${flow.parts.length + 1})`
+        state = { ...state, rewriteFlow: { ...flow, parts: [...flow.parts, { message, messageCursor: message.length }], selectedPartIndex: flow.parts.length } }
         void render()
         return
       }
@@ -967,13 +962,13 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         }
         if (key.name === "backspace" || key.name === "delete") {
           const field = flow.activeField
-          state = { ...state, rewriteFlow: updateSelectedVisualRow(flow, (row) => editVisualRowText(row, field, -1)) }
+          state = { ...state, rewriteFlow: updateSelectedVisualRow(flow, (row) => editVisualRowText(row, field, key)) }
           void render()
           return
         }
-        if (isTypableChar(key)) {
+        if (key.name === "left" || key.name === "right" || isTypableChar(key)) {
           const field = flow.activeField
-          state = { ...state, rewriteFlow: updateSelectedVisualRow(flow, (row) => editVisualRowText(row, field, key.sequence)) }
+          state = { ...state, rewriteFlow: updateSelectedVisualRow(flow, (row) => editVisualRowText(row, field, key)) }
           void render()
           return
         }
@@ -1064,10 +1059,10 @@ function handleRepoPickerKey(state: AppState, key: KeyEvent, paths: string[], se
     if (state.exitPrompt) exit()
     return { ...state, exitPrompt: true, error: "press esc again to exit" }
   }
-  if (key.name === "backspace" || key.name === "delete") return { ...state, repoQuery: state.repoQuery.slice(0, -1), selectedRepoIndex: 0, exitPrompt: false, error: undefined }
   if (key.name === "up" || key.name === "k") return { ...state, selectedRepoIndex: Math.max(0, state.selectedRepoIndex - 1), exitPrompt: false }
   if (key.name === "down" || key.name === "j") return { ...state, selectedRepoIndex: Math.min(Math.max(0, filtered.length - 1), state.selectedRepoIndex + 1), exitPrompt: false }
-  if (isTypableChar(key)) return { ...state, repoQuery: `${state.repoQuery}${key.sequence}`, selectedRepoIndex: 0, exitPrompt: false, error: undefined }
+  const queryEdit = editText(state.repoQuery, state.repoQueryCursor, key)
+  if (queryEdit) return { ...state, repoQuery: queryEdit.value, repoQueryCursor: queryEdit.cursor, selectedRepoIndex: 0, exitPrompt: false, error: undefined }
   return state.exitPrompt ? { ...state, exitPrompt: false, error: undefined } : state
 }
 
@@ -1086,6 +1081,63 @@ function isTypableChar(key: KeyEvent): boolean {
   return !key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " " && key.name !== "q"
 }
 
+function editText(value: string, cursor: number | undefined, key: KeyEvent): { value: string; cursor: number } | undefined {
+  const index = clamp(cursor ?? value.length, 0, value.length)
+  if (key.name === "left") return { value, cursor: Math.max(0, index - 1) }
+  if (key.name === "right") return { value, cursor: Math.min(value.length, index + 1) }
+  if (key.name === "home") return { value, cursor: 0 }
+  if (key.name === "end") return { value, cursor: value.length }
+  if (key.name === "backspace") {
+    if (index === 0) return { value, cursor: 0 }
+    return { value: `${value.slice(0, index - 1)}${value.slice(index)}`, cursor: index - 1 }
+  }
+  if (key.name === "delete") return { value: `${value.slice(0, index)}${value.slice(index + 1)}`, cursor: index }
+  if (isTypableChar(key)) return { value: `${value.slice(0, index)}${key.sequence}${value.slice(index)}`, cursor: index + key.sequence.length }
+  return undefined
+}
+
+function backState(state: AppState): AppState {
+  const flow = state.rewriteFlow
+  if (!flow) return { ...state, screen: "dashboard", exitPrompt: false }
+
+  if (flow.type === "reword") {
+    if (flow.step === "preview") return { ...state, rewriteFlow: { ...flow, step: "form", error: undefined }, exitPrompt: false }
+    return { ...state, screen: "history", rewriteFlow: undefined, exitPrompt: false }
+  }
+  if (flow.type === "drop") {
+    if (flow.step === "preview") return { ...state, rewriteFlow: { ...flow, step: "confirm", error: undefined }, exitPrompt: false }
+    return { ...state, screen: "history", rewriteFlow: undefined, exitPrompt: false }
+  }
+  if (flow.type === "author") {
+    if (flow.step === "preview") return { ...state, rewriteFlow: { ...flow, step: "warning", error: undefined }, exitPrompt: false }
+    if (flow.step === "warning") return { ...state, rewriteFlow: { ...flow, step: "form", error: undefined }, exitPrompt: false }
+    return { ...state, screen: "history", rewriteFlow: undefined, exitPrompt: false }
+  }
+  if (flow.type === "date") {
+    if (flow.step === "preview") return { ...state, rewriteFlow: { ...flow, step: "form", error: undefined }, exitPrompt: false }
+    return { ...state, screen: "history", rewriteFlow: undefined, exitPrompt: false }
+  }
+  if (flow.type === "history-list") {
+    if (flow.step === "form" && flow.activeField !== "list") return { ...state, rewriteFlow: { ...flow, activeField: "list" }, exitPrompt: false }
+    if (flow.step === "dirty") return { ...state, rewriteFlow: { ...flow, step: "form", error: undefined }, exitPrompt: false }
+    if (flow.step === "preview") return { ...state, rewriteFlow: { ...flow, step: "form", error: undefined }, exitPrompt: false }
+    if (flow.step === "upstream-confirm") return { ...state, rewriteFlow: { ...flow, step: "preview", error: undefined }, exitPrompt: false }
+    return { ...state, screen: "history", rewriteFlow: undefined, exitPrompt: false }
+  }
+  if (flow.type === "split") {
+    if (flow.step === "form" && flow.activeField === "message") return { ...state, rewriteFlow: { ...flow, activeField: "paths" }, exitPrompt: false }
+    if (flow.step === "preview") return { ...state, rewriteFlow: { ...flow, step: "form", error: undefined }, exitPrompt: false }
+    return { ...state, screen: "history", rewriteFlow: undefined, exitPrompt: false }
+  }
+  if (flow.type === "visual-rebase") {
+    if (flow.step === "form" && flow.activeField !== "list") return { ...state, rewriteFlow: { ...flow, activeField: "list" }, exitPrompt: false }
+    if (flow.step === "preview") return { ...state, rewriteFlow: { ...flow, step: "form", error: undefined }, exitPrompt: false }
+    return { ...state, screen: "history", rewriteFlow: undefined, exitPrompt: false }
+  }
+
+  return { ...state, screen: "dashboard", rewriteFlow: undefined, exitPrompt: false }
+}
+
 function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
   if (key.name === "up" || key.name === "k") {
     return { ...state, selectedCommitIndex: Math.max(0, state.selectedCommitIndex - 1), historyScrollOffset: Math.max(0, state.historyScrollOffset - (state.selectedCommitIndex <= state.historyScrollOffset ? 1 : 0)) }
@@ -1099,9 +1151,7 @@ function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
   if (key.name === "pagedown") {
     return { ...state, selectedCommitIndex: state.selectedCommitIndex + 18, historyScrollOffset: state.historyScrollOffset + 18 }
   }
-  if (key.name === "backspace" || key.name === "delete") {
-    return { ...state, historyQuery: state.historyQuery.slice(0, -1), selectedCommitIndex: 0, historyScrollOffset: 0 }
-  }
+  const queryEdit = editText(state.historyQuery, state.historyQueryCursor, key)
 
   if (!key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " ") {
     // Rewrite flow triggers require a selected commit from last render.
@@ -1127,10 +1177,11 @@ function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
       return startHistoryListEditFlow(state)
     }
     // Otherwise append to search filter, excluding shortcut keys.
-    if (key.sequence !== "q" && key.sequence !== "w" && key.sequence !== "d" && key.sequence !== "a" && key.sequence !== "t" && key.sequence !== "s" && key.sequence !== "i" && key.sequence !== "m") {
-      return { ...state, historyQuery: `${state.historyQuery}${key.sequence}`, selectedCommitIndex: 0, historyScrollOffset: 0 }
+    if (queryEdit && key.sequence !== "q" && key.sequence !== "w" && key.sequence !== "d" && key.sequence !== "a" && key.sequence !== "t" && key.sequence !== "s" && key.sequence !== "i" && key.sequence !== "m") {
+      return { ...state, historyQuery: queryEdit.value, historyQueryCursor: queryEdit.cursor, selectedCommitIndex: 0, historyScrollOffset: 0 }
     }
   }
+  if (queryEdit && !isTypableChar(key)) return { ...state, historyQuery: queryEdit.value, historyQueryCursor: queryEdit.cursor, selectedCommitIndex: 0, historyScrollOffset: 0 }
   return state
 }
 
@@ -1196,10 +1247,14 @@ function updateSelectedHistoryEditRow(flow: HistoryListEditState, update: (row: 
   }
 }
 
-function editHistoryRowText(row: HistoryEditDraft, field: "message" | "date", value: string | -1): HistoryEditDraft {
+function editHistoryRowText(row: HistoryEditDraft, field: "message" | "date", key: KeyEvent): HistoryEditDraft {
   const current = field === "message" ? row.message ?? row.subject : row.date ?? row.authorDate
-  const next = value === -1 ? current.slice(0, -1) : `${current}${value}`
-  return field === "message" ? { ...row, message: next, drop: false } : { ...row, date: next, dateMode: row.dateMode ?? "both", drop: false }
+  const cursor = field === "message" ? row.messageCursor : row.dateCursor
+  const edit = editText(current, cursor, key)
+  if (!edit) return row
+  return field === "message"
+    ? { ...row, message: edit.value, messageCursor: edit.cursor, drop: false }
+    : { ...row, date: edit.value, dateCursor: edit.cursor, dateMode: row.dateMode ?? "both", drop: false }
 }
 
 function validateSplitFlow(flow: SplitCommitState): string | undefined {
@@ -1213,10 +1268,14 @@ function validateSplitFlow(flow: SplitCommitState): string | undefined {
   return undefined
 }
 
-function updateSelectedSplitPart(flow: SplitCommitState, update: (message: string) => string): SplitCommitState {
+function updateSelectedSplitPart(flow: SplitCommitState, key: KeyEvent): SplitCommitState {
   return {
     ...flow,
-    parts: flow.parts.map((part, index) => index === flow.selectedPartIndex ? { ...part, message: update(part.message) } : part),
+    parts: flow.parts.map((part, index) => {
+      if (index !== flow.selectedPartIndex) return part
+      const edit = editText(part.message, part.messageCursor, key)
+      return edit ? { ...part, message: edit.value, messageCursor: edit.cursor } : part
+    }),
   }
 }
 
@@ -1253,10 +1312,12 @@ function updateSelectedVisualRow(flow: VisualRebaseState, update: (row: VisualRe
   }
 }
 
-function editVisualRowText(row: VisualRebaseTodoRow, field: "message" | "command", value: string | -1): VisualRebaseTodoRow {
+function editVisualRowText(row: VisualRebaseTodoRow, field: "message" | "command", key: KeyEvent): VisualRebaseTodoRow {
   const current = field === "message" ? row.message ?? row.subject : row.command ?? ""
-  const next = value === -1 ? current.slice(0, -1) : `${current}${value}`
-  return field === "message" ? { ...row, message: next } : { ...row, command: next }
+  const cursor = field === "message" ? row.messageCursor : row.commandCursor
+  const edit = editText(current, cursor, key)
+  if (!edit) return row
+  return field === "message" ? { ...row, message: edit.value, messageCursor: edit.cursor } : { ...row, command: edit.value, commandCursor: edit.cursor }
 }
 
 function moveVisualRow(flow: VisualRebaseState, direction: -1 | 1): VisualRebaseState {

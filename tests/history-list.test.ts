@@ -45,7 +45,7 @@ test("OpenTUI test renderer captures the scroll-windowed history screen", async 
       subject: `commit ${index}`,
       refs: [],
     }))
-    renderer.root.add(HistoryScreen(fakeRepositoryState(), commits, 20, 12, "", "diff --git a/file b/file\n+new"))
+    renderer.root.add(HistoryScreen(fakeRepositoryState(), commits, 20, 12, "", 0, "diff --git a/file b/file\n+new"))
     await renderOnce()
 
     const frame = captureCharFrame()

@@ -4,14 +4,14 @@ import type { RepositoryState } from "../../git/repository"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
-export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], selectedIndex: number, scrollOffset: number, query: string, diff: string) {
+export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], selectedIndex: number, scrollOffset: number, query: string, queryCursor: number, diff: string) {
   const selected = commits[selectedIndex]
   const visibleLimit = 18
   const visibleStart = visibleWindowStart(commits.length, selectedIndex, scrollOffset, visibleLimit)
   const visibleEnd = Math.min(commits.length, visibleStart + visibleLimit)
   return AppFrame(
     "History And Diff",
-    Text({ content: `Filter: ${query || "(type to search)"}   ${commits.length} commit(s)   showing ${commits.length === 0 ? 0 : visibleStart + 1}-${visibleEnd}`, fg: theme.muted }),
+    Text({ content: `Filter: ${query ? editableText(query, queryCursor) : "|(type to search)"}   ${commits.length} commit(s)   showing ${commits.length === 0 ? 0 : visibleStart + 1}-${visibleEnd}`, fg: theme.muted }),
     Box(
       { flexDirection: "row", gap: 1, flexGrow: 1 },
       Box(
@@ -24,7 +24,7 @@ export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], 
         ...previewLines(diff, 24).map((line) => Text({ content: line, fg: lineColor(line) })),
       ),
     ),
-    Text({ content: "j/k: select  pgup/pgdn: jump  type: filter  m: edit history list  w: reword  d: drop  a: author  t: date  s: split  i: rebase  b/esc: dashboard", fg: theme.muted }),
+    Text({ content: "j/k: select  left/right: filter cursor  type: filter  m/w/d/a/t/s/i: actions  b/esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -62,4 +62,9 @@ function lineColor(line: string): string {
 
 function truncate(value: string, maxLength: number): string {
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`
+}
+
+function editableText(value: string, cursor: number): string {
+  const index = Math.min(Math.max(0, cursor), value.length)
+  return `${value.slice(0, index)}|${value.slice(index)}`
 }

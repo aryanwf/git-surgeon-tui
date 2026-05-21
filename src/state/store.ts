@@ -7,9 +7,11 @@ export function createInitialState(repoPath?: string): AppState {
     repoPath,
     commandLog: [],
     repoQuery: "",
+    repoQueryCursor: 0,
     selectedRepoIndex: 0,
     exitPrompt: false,
     historyQuery: "",
+    historyQueryCursor: 0,
     selectedCommitIndex: 0,
     historyScrollOffset: 0,
   }
@@ -29,6 +31,7 @@ export function startRewordFlow(state: AppState, commit: CommitSummary): AppStat
     selectedAuthorEmail: commit.authorEmail,
     selectedAuthorDate: commit.authorDate,
     newMessage: commit.subject,
+    newMessageCursor: commit.subject.length,
   }
   return { ...state, screen: "rewrite-reword", rewriteFlow: flow }
 }
@@ -56,7 +59,9 @@ export function startAuthorFlow(state: AppState, commit: CommitSummary): AppStat
     mode: "both",
     activeField: "name",
     newName: commit.authorName,
+    newNameCursor: commit.authorName.length,
     newEmail: commit.authorEmail,
+    newEmailCursor: commit.authorEmail.length,
   }
   return { ...state, screen: "rewrite-author", rewriteFlow: flow }
 }
@@ -72,6 +77,7 @@ export function startDateFlow(state: AppState, commit: CommitSummary): AppState 
     mode: "both",
     activeField: "date",
     newDate: commit.authorDate,
+    newDateCursor: commit.authorDate.length,
   }
   return { ...state, screen: "rewrite-date", rewriteFlow: flow }
 }
@@ -85,6 +91,7 @@ export function startHistoryListEditFlow(state: AppState): AppState {
     previewPane: "oldGraph",
     previewScrollOffset: 0,
     upstreamConfirmation: "",
+    upstreamConfirmationCursor: 0,
   }
   return { ...state, screen: "rewrite-history-list", rewriteFlow: flow }
 }
@@ -97,8 +104,8 @@ export function startSplitFlow(state: AppState, commit: CommitSummary): AppState
     selectedSubject: commit.subject,
     pathAssignments: {},
     parts: [
-      { message: `${commit.subject} (part 1)` },
-      { message: `${commit.subject} (part 2)` },
+      { message: `${commit.subject} (part 1)`, messageCursor: `${commit.subject} (part 1)`.length },
+      { message: `${commit.subject} (part 2)`, messageCursor: `${commit.subject} (part 2)`.length },
     ],
     selectedPathIndex: 0,
     selectedPartIndex: 0,

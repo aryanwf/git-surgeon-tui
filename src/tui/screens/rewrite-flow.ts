@@ -22,7 +22,7 @@ function RewordFormScreen(state: RepositoryState, flow: RewriteRewordState) {
       Box(
         { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
         Text({ content: "New message:", fg: theme.accent }),
-        Text({ content: `${flow.newMessage}|`, fg: theme.text }),
+        Text({ content: editableText(flow.newMessage, true, flow.newMessageCursor), fg: theme.text }),
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
@@ -184,8 +184,8 @@ function AuthorFormScreen(state: RepositoryState, flow: RewriteAuthorState) {
       commitInfoBox(flow.selectedSha, flow.selectedSubject, flow.selectedAuthorName, flow.selectedAuthorEmail),
       Box(
         { flexDirection: "row", gap: 1 },
-        inputField("Name", flow.newName, flow.activeField === "name"),
-        inputField("Email", flow.newEmail, flow.activeField === "email"),
+        inputField("Name", flow.newName, flow.activeField === "name", flow.newNameCursor),
+        inputField("Email", flow.newEmail, flow.activeField === "email", flow.newEmailCursor),
       ),
       Box(
         { flexDirection: "row", gap: 1 },
@@ -193,11 +193,11 @@ function AuthorFormScreen(state: RepositoryState, flow: RewriteAuthorState) {
         ...modes.map((m, i) =>
           Text({ content: ` ${m} `, fg: i === modeIndex ? theme.accent : theme.muted }),
         ),
-        Text({ content: `  (left/right to change)`, fg: theme.muted }),
+        Text({ content: flow.activeField === "mode" ? `  (left/right to change)` : `  (tab to mode)`, fg: flow.activeField === "mode" ? theme.accent : theme.muted }),
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "tab: next field  left/right: change mode  enter: next  esc: dashboard", fg: theme.muted }),
+    Text({ content: "tab: next field/mode  left/right: move cursor or change active mode  enter: next  esc: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -298,18 +298,18 @@ function DateFormScreen(state: RepositoryState, flow: RewriteDateState) {
         Text({ content: `Current author date:    ${flow.selectedAuthorDate}`, fg: theme.muted }),
         Text({ content: `Current committer date: ${flow.selectedCommitterDate}`, fg: theme.muted }),
       ),
-      inputField("New date (ISO 8601 with timezone)", flow.newDate, flow.activeField === "date"),
+      inputField("New date (ISO 8601 with timezone)", flow.newDate, flow.activeField === "date", flow.newDateCursor),
       Box(
         { flexDirection: "row", gap: 1 },
         Text({ content: "Mode: ", fg: theme.muted }),
         ...modes.map((m, i) =>
           Text({ content: ` ${m} `, fg: i === modeIndex ? theme.accent : theme.muted }),
         ),
-        Text({ content: "  (left/right to change)", fg: theme.muted }),
+        Text({ content: flow.activeField === "mode" ? "  (left/right to change)" : "  (tab to mode)", fg: flow.activeField === "mode" ? theme.accent : theme.muted }),
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "type: edit date  left/right: change mode  enter: preview  esc: dashboard", fg: theme.muted }),
+    Text({ content: "type: edit date  left/right: move cursor or change active mode  tab: field/mode  enter: preview", fg: theme.muted }),
     StatusBar(state),
   )
 }
@@ -465,7 +465,7 @@ function HistoryListUpstreamConfirmScreen(state: RepositoryState, flow: HistoryL
         Text({ content: "This applies the local rewrite, then runs git push -f.", fg: theme.text }),
         Text({ content: `Type exactly: ${phrase}`, fg: theme.accent }),
       ),
-      Text({ content: `${flow.upstreamConfirmation}|`, fg: theme.text }),
+      Text({ content: editableText(flow.upstreamConfirmation, true, flow.upstreamConfirmationCursor), fg: theme.text }),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
     Text({ content: "type phrase  enter: apply  esc: dashboard", fg: theme.muted }),
@@ -533,7 +533,7 @@ function SplitCommitFormScreen(state: RepositoryState, flow: SplitCommitState) {
         Box(
           { flexDirection: "column", flexGrow: 1, borderStyle: "single", borderColor: flow.activeField === "message" ? theme.accent : theme.border, padding: 1 },
           Text({ content: `Part ${flow.selectedPartIndex + 1} message`, fg: theme.accent }),
-          Text({ content: `${selectedPart?.message ?? ""}${flow.activeField === "message" ? "|" : ""}`, fg: theme.text }),
+          Text({ content: editableText(selectedPart?.message ?? "", flow.activeField === "message", selectedPart?.messageCursor), fg: theme.text }),
           Text({ content: "", fg: theme.muted }),
           ...splitPartSummary(paths, flow),
           ...(selectedPath ? [Text({ content: `Selected file goes to part ${(flow.pathAssignments[selectedPath] ?? 0) + 1}`, fg: theme.muted })] : []),
@@ -717,11 +717,11 @@ function commitInfoBox(sha: string, subject: string, authorName?: string, author
   return Box({ flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 }, ...lines)
 }
 
-function inputField(label: string, value: string, active: boolean) {
+function inputField(label: string, value: string, active: boolean, cursor?: number) {
   return Box(
     { flexDirection: "column", borderStyle: "single", borderColor: active ? theme.accent : theme.border, padding: 1, flexGrow: 1 },
     Text({ content: label, fg: active ? theme.accent : theme.muted }),
-    Text({ content: `${value}${active ? "|" : ""}`, fg: theme.text }),
+    Text({ content: editableText(value, active, cursor), fg: theme.text }),
   )
 }
 
@@ -758,8 +758,8 @@ function selectedDetails(row: VisualRebaseTodoRow, activeField: "list" | "messag
   return [
     Text({ content: `Subject: ${truncate(row.subject, 72)}`, fg: theme.text }),
     Text({ content: `Action:  ${row.action}`, fg: theme.text }),
-    Text({ content: `Message: ${truncate(row.message ?? row.subject, 72)}${activeField === "message" ? "|" : ""}`, fg: activeField === "message" ? theme.accent : theme.muted }),
-    Text({ content: `Command: ${truncate(row.command ?? "", 72)}${activeField === "command" ? "|" : ""}`, fg: activeField === "command" ? theme.accent : theme.muted }),
+    Text({ content: `Message: ${editableText(row.message ?? row.subject, activeField === "message", row.messageCursor, 72)}`, fg: activeField === "message" ? theme.accent : theme.muted }),
+    Text({ content: `Command: ${editableText(row.command ?? "", activeField === "command", row.commandCursor, 72)}`, fg: activeField === "command" ? theme.accent : theme.muted }),
     Text({ content: "Notes: squash/fixup cannot be first; merge commits are blocked in v1.", fg: theme.muted }),
   ]
 }
@@ -795,8 +795,8 @@ function historyEditRows(rows: HistoryEditDraft[], selectedIndex: number) {
 function historyEditDetails(row: HistoryEditDraft, activeField: "list" | "message" | "date") {
   return [
     Text({ content: `Subject: ${truncate(row.subject, 74)}`, fg: theme.text }),
-    Text({ content: `Message: ${truncate(row.message ?? row.subject, 74)}${activeField === "message" ? "|" : ""}`, fg: activeField === "message" ? theme.accent : theme.muted }),
-    Text({ content: `Date:    ${row.date ?? row.authorDate}${activeField === "date" ? "|" : ""}`, fg: activeField === "date" ? theme.accent : theme.muted }),
+    Text({ content: `Message: ${editableText(row.message ?? row.subject, activeField === "message", row.messageCursor, 74)}`, fg: activeField === "message" ? theme.accent : theme.muted }),
+    Text({ content: `Date:    ${editableText(row.date ?? row.authorDate, activeField === "date", row.dateCursor, 74)}`, fg: activeField === "date" ? theme.accent : theme.muted }),
     Text({ content: `Mode:    ${row.dateMode ?? "both"}`, fg: row.date ? theme.text : theme.muted }),
     Text({ content: `Status:  ${rowStatus(row)}`, fg: row.drop ? theme.danger : rowStatus(row) === "pick" ? theme.muted : theme.ok }),
   ]
@@ -848,4 +848,10 @@ function oldToNewLines(oldToNew: Record<string, string>) {
 
 function truncate(value: string, maxLength: number): string {
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`
+}
+
+function editableText(value: string, active: boolean, cursor = value.length, maxLength?: number): string {
+  const index = Math.min(Math.max(0, cursor), value.length)
+  const content = active ? `${value.slice(0, index)}|${value.slice(index)}` : value
+  return maxLength ? truncate(content, maxLength) : content
 }

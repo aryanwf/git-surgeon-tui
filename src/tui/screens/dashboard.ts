@@ -5,14 +5,26 @@ import { AppFrame, theme } from "../layout"
 
 export function DashboardScreen(state: RepositoryState) {
   const rows = dashboardRows(state)
+  const commands = [
+    ["h", "History and diff"],
+    ["p", "Preview rewrite impact"],
+    ["s", "Size analysis"],
+    ["v", "Recovery viewer"],
+    ["?", "Help"],
+  ] as const
 
   return AppFrame(
     "Git Surgeon",
     Box(
       { flexDirection: "column", gap: 1 },
       ...rows.map(([label, value]) => Text({ content: `${label.padEnd(14)} ${value}`, fg: theme.text })),
+      Box(
+        { flexDirection: "column", gap: 0, marginTop: 1 },
+        Text({ content: "Commands available", fg: theme.accent }),
+        ...commands.map(([key, label]) => Text({ content: `${key.padEnd(3)} ${label}`, fg: theme.muted })),
+      ),
     ),
-    Text({ content: "Read-only tools: h history+diff  p preview  s size analysis  v recovery  ?: help", fg: theme.muted }),
+    Text({ content: "q: quit  r: refresh", fg: theme.muted }),
     StatusBar(state),
   )
 }

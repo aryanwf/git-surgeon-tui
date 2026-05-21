@@ -1,6 +1,7 @@
 import { Box, Text } from "@opentui/core"
 import type { RepositoryState } from "../../git/repository"
 import type { HistoryEditDraft, HistoryListEditState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState, VisualRebaseTodoRow } from "../../state/types"
+import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -26,7 +27,12 @@ function RewordFormScreen(state: RepositoryState, flow: RewriteRewordState) {
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "type: edit message  backspace: delete  enter: preview  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["type", "edit commit name"],
+      ["backspace", "delete text"],
+      ["enter", "preview change"],
+      ["esc", "back to history"],
+    ]),
     StatusBar(state),
   )
 }
@@ -44,7 +50,10 @@ function RewordPreviewScreen(state: RepositoryState, flow: RewriteRewordState) {
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["enter", "apply to real repo"],
+      ["esc", "back to edit form"],
+    ]),
     StatusBar(state),
   )
 }
@@ -58,7 +67,7 @@ function RewordResultScreen(state: RepositoryState, flow: RewriteRewordState) {
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.preview?.backupRef ? [Text({ content: `Backup ref preserved: ${flow.preview.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "b/esc: dashboard", fg: theme.muted }),
+      KeyHelp([["b / esc", "back to history"]]),
       StatusBar(state),
     )
   }
@@ -72,7 +81,7 @@ function RewordResultScreen(state: RepositoryState, flow: RewriteRewordState) {
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([["b / esc", "back to history"]]),
     StatusBar(state),
   )
 }
@@ -109,7 +118,10 @@ function DropConfirmScreen(state: RepositoryState, flow: RewriteDropState) {
         : Text({ content: "No descendant commits.", fg: theme.muted }),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "enter: preview drop  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["enter", "preview drop"],
+      ["esc", "back to history"],
+    ]),
     StatusBar(state),
   )
 }
@@ -127,7 +139,10 @@ function DropPreviewScreen(state: RepositoryState, flow: RewriteDropState) {
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["enter", "apply to real repo"],
+      ["esc", "back to confirmation"],
+    ]),
     StatusBar(state),
   )
 }
@@ -141,7 +156,7 @@ function DropResultScreen(state: RepositoryState, flow: RewriteDropState) {
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "b/esc: dashboard", fg: theme.muted }),
+      KeyHelp([["b / esc", "back to history"]]),
       StatusBar(state),
     )
   }
@@ -155,7 +170,7 @@ function DropResultScreen(state: RepositoryState, flow: RewriteDropState) {
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([["b / esc", "back to history"]]),
     StatusBar(state),
   )
 }
@@ -175,7 +190,6 @@ export function ChangeAuthorFlowScreen(state: RepositoryState, flow: RewriteAuth
 function AuthorFormScreen(state: RepositoryState, flow: RewriteAuthorState) {
   const modes: Array<"author" | "committer" | "both"> = ["author", "committer", "both"]
   const modeIndex = modes.indexOf(flow.mode)
-  const modeHelp = `left/right: change (current: ${flow.mode})`
 
   return AppFrame(
     "Change Commit Author",
@@ -193,11 +207,16 @@ function AuthorFormScreen(state: RepositoryState, flow: RewriteAuthorState) {
         ...modes.map((m, i) =>
           Text({ content: ` ${m} `, fg: i === modeIndex ? theme.accent : theme.muted }),
         ),
-        Text({ content: flow.activeField === "mode" ? `  (left/right to change)` : `  (tab to mode)`, fg: flow.activeField === "mode" ? theme.accent : theme.muted }),
+        Text({ content: flow.activeField === "mode" ? `  (←/→ to change)` : `  (tab to mode)`, fg: flow.activeField === "mode" ? theme.accent : theme.muted }),
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "tab: next field/mode  left/right: move cursor or change active mode  enter: next  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["tab", "next field or mode"],
+      ["←/→", "move cursor or mode"],
+      ["enter", "continue"],
+      ["esc", "back to history"],
+    ]),
     StatusBar(state),
   )
 }
@@ -222,7 +241,10 @@ function AuthorWarningScreen(state: RepositoryState, flow: RewriteAuthorState) {
         Text({ content: `  New:     ${flow.newName} <${flow.newEmail}>`, fg: theme.text }),
       ),
     ),
-    Text({ content: "enter: proceed to preview  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["enter", "preview author change"],
+      ["esc", "back to author form"],
+    ]),
     StatusBar(state),
   )
 }
@@ -240,7 +262,10 @@ function AuthorPreviewScreen(state: RepositoryState, flow: RewriteAuthorState) {
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["enter", "apply to real repo"],
+      ["esc", "back to warning"],
+    ]),
     StatusBar(state),
   )
 }
@@ -254,7 +279,7 @@ function AuthorResultScreen(state: RepositoryState, flow: RewriteAuthorState) {
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "b/esc: dashboard", fg: theme.muted }),
+      KeyHelp([["b / esc", "back to history"]]),
       StatusBar(state),
     )
   }
@@ -268,7 +293,7 @@ function AuthorResultScreen(state: RepositoryState, flow: RewriteAuthorState) {
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([["b / esc", "back to history"]]),
     StatusBar(state),
   )
 }
@@ -305,11 +330,17 @@ function DateFormScreen(state: RepositoryState, flow: RewriteDateState) {
         ...modes.map((m, i) =>
           Text({ content: ` ${m} `, fg: i === modeIndex ? theme.accent : theme.muted }),
         ),
-        Text({ content: flow.activeField === "mode" ? "  (left/right to change)" : "  (tab to mode)", fg: flow.activeField === "mode" ? theme.accent : theme.muted }),
+        Text({ content: flow.activeField === "mode" ? "  (←/→ to change)" : "  (tab to mode)", fg: flow.activeField === "mode" ? theme.accent : theme.muted }),
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "type: edit date  left/right: move cursor or change active mode  tab: field/mode  enter: preview", fg: theme.muted }),
+    KeyHelp([
+      ["type", "edit commit date"],
+      ["←/→", "move cursor or mode"],
+      ["tab", "switch field or mode"],
+      ["enter", "preview date change"],
+      ["esc", "back to history"],
+    ]),
     StatusBar(state),
   )
 }
@@ -327,7 +358,10 @@ function DatePreviewScreen(state: RepositoryState, flow: RewriteDateState) {
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["enter", "apply to real repo"],
+      ["esc", "back to date form"],
+    ]),
     StatusBar(state),
   )
 }
@@ -341,7 +375,7 @@ function DateResultScreen(state: RepositoryState, flow: RewriteDateState) {
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "b/esc: dashboard", fg: theme.muted }),
+      KeyHelp([["b / esc", "back to history"]]),
       StatusBar(state),
     )
   }
@@ -355,7 +389,7 @@ function DateResultScreen(state: RepositoryState, flow: RewriteDateState) {
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([["b / esc", "back to history"]]),
     StatusBar(state),
   )
 }
@@ -401,7 +435,15 @@ function HistoryListFormScreen(state: RepositoryState, flow: HistoryListEditStat
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "j/k: select  w: edit msg  t: edit date  x: drop  c: clear row  enter: preview", fg: theme.muted }),
+    KeyHelp([
+      ["↑/↓", "select commit"],
+      ["w", "edit commit name"],
+      ["t", "edit commit date"],
+      ["x", "drop commit"],
+      ["c", "clear row edits"],
+      ["enter", "preview changes"],
+      ["esc", "back to history"],
+    ]),
     StatusBar(state),
   )
 }
@@ -418,7 +460,8 @@ function HistoryListDirtyScreen(state: RepositoryState, flow: HistoryListEditSta
       ),
       Text({ content: "s: stash local changes with git stash push -u", fg: theme.text }),
       Text({ content: "m: commit manually and return to history", fg: theme.text }),
-      Text({ content: "c: cancel  esc: dashboard", fg: theme.text }),
+      Text({ content: "c: cancel", fg: theme.text }),
+      Text({ content: "esc: back to edit list", fg: theme.text }),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
     StatusBar(state),
@@ -448,7 +491,12 @@ function HistoryListPreviewScreen(state: RepositoryState, flow: HistoryListEditS
       warningsBox(p?.warnings ?? []),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "tab: pane  j/k: scroll  enter: apply after preview succeeds  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["tab", "switch preview pane"],
+      ["↑/↓", "scroll preview"],
+      ["enter", "apply after preview succeeds"],
+      ["esc", "back to edit list"],
+    ]),
     StatusBar(state),
   )
 }
@@ -468,7 +516,11 @@ function HistoryListUpstreamConfirmScreen(state: RepositoryState, flow: HistoryL
       Text({ content: editableText(flow.upstreamConfirmation, true, flow.upstreamConfirmationCursor), fg: theme.text }),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "type phrase  enter: apply  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["type", "enter confirmation phrase"],
+      ["enter", "apply rewrite"],
+      ["esc", "back to preview"],
+    ]),
     StatusBar(state),
   )
 }
@@ -482,7 +534,7 @@ function HistoryListResultScreen(state: RepositoryState, flow: HistoryListEditSt
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "b/esc: dashboard", fg: theme.muted }),
+      KeyHelp([["b / esc", "back to history"]]),
       StatusBar(state),
     )
   }
@@ -498,7 +550,7 @@ function HistoryListResultScreen(state: RepositoryState, flow: HistoryListEditSt
       ...(flow.stashedRef ? [Text({ content: `Local changes were stashed: ${flow.stashedRef}`, fg: theme.muted })] : []),
       Text({ content: "Recovery: create a branch from the backup ref or reset to it from the Recovery Viewer.", fg: theme.muted }),
     ),
-    Text({ content: "b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([["b / esc", "back to history"]]),
     StatusBar(state),
   )
 }
@@ -541,7 +593,16 @@ function SplitCommitFormScreen(state: RepositoryState, flow: SplitCommitState) {
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "j/k: file  left/right: assign part  tab: edit message  [/]: part  n: add part  x: remove part  enter: preview", fg: theme.muted }),
+    KeyHelp([
+      ["↑/↓", "select file"],
+      ["←/→", "assign selected file"],
+      ["tab", "edit part message"],
+      ["[ / ]", "select commit part"],
+      ["n", "add commit part"],
+      ["x", "remove commit part"],
+      ["enter", "preview split"],
+      ["esc", "back to history"],
+    ]),
     StatusBar(state),
   )
 }
@@ -564,7 +625,10 @@ function SplitCommitPreviewScreen(state: RepositoryState, flow: SplitCommitState
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["enter", "apply to real repo"],
+      ["esc", "back to split form"],
+    ]),
     StatusBar(state),
   )
 }
@@ -578,7 +642,7 @@ function SplitCommitResultScreen(state: RepositoryState, flow: SplitCommitState)
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "b/esc: dashboard", fg: theme.muted }),
+      KeyHelp([["b / esc", "back to history"]]),
       StatusBar(state),
     )
   }
@@ -592,7 +656,7 @@ function SplitCommitResultScreen(state: RepositoryState, flow: SplitCommitState)
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([["b / esc", "back to history"]]),
     StatusBar(state),
   )
 }
@@ -635,7 +699,16 @@ function VisualRebaseFormScreen(state: RepositoryState, flow: VisualRebaseState)
       ),
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
-    Text({ content: "j/k: select  left/right/x: action  [/]: reorder  e: edit msg  c: exec cmd  enter: preview", fg: theme.muted }),
+    KeyHelp([
+      ["↑/↓", "select commit"],
+      ["←/→", "change action"],
+      ["x", "drop commit"],
+      ["[ / ]", "reorder commit"],
+      ["e", "edit commit name"],
+      ["c", "edit exec command"],
+      ["enter", "preview rebase"],
+      ["esc", "back to history"],
+    ]),
     StatusBar(state),
   )
 }
@@ -658,7 +731,10 @@ function VisualRebasePreviewScreen(state: RepositoryState, flow: VisualRebaseSta
       ),
       warningsBox(p?.warnings ?? []),
     ),
-    Text({ content: "enter: apply to real repo  esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["enter", "apply to real repo"],
+      ["esc", "back to rebase form"],
+    ]),
     StatusBar(state),
   )
 }
@@ -672,7 +748,7 @@ function VisualRebaseResultScreen(state: RepositoryState, flow: VisualRebaseStat
         Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
         ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
       ),
-      Text({ content: "b/esc: dashboard", fg: theme.muted }),
+      KeyHelp([["b / esc", "back to history"]]),
       StatusBar(state),
     )
   }
@@ -686,7 +762,7 @@ function VisualRebaseResultScreen(state: RepositoryState, flow: VisualRebaseStat
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([["b / esc", "back to history"]]),
     StatusBar(state),
   )
 }

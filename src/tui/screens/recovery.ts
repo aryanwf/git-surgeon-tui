@@ -1,6 +1,7 @@
 import { Box, Text } from "@opentui/core"
 import type { RecoveryReport } from "../../git/recovery"
 import type { RepositoryState } from "../../git/repository"
+import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -17,7 +18,11 @@ export function RecoveryScreen(state: RepositoryState, report: RecoveryReport, e
       ...(exportResult?.error ? [Text({ content: `Export failed: ${exportResult.error}`, fg: theme.danger })] : []),
       ...(newestBackup ? [Text({ content: `Newest backup action target: ${newestBackup.refName}`, fg: theme.muted })] : []),
     ),
-    Text({ content: "c: create recovery branch  e: export latest operation report  b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["c", "create recovery branch"],
+      ["e", "export latest report"],
+      ["b / esc", "back to dashboard"],
+    ]),
     StatusBar(state),
   )
 }

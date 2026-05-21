@@ -1,6 +1,7 @@
 import { Box, Text } from "@opentui/core"
 import { renderHistoryPreview, type HistoryPreview } from "../../git/preview"
 import type { RepositoryState } from "../../git/repository"
+import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -32,7 +33,10 @@ export function PreviewScreen(state: RepositoryState, preview: HistoryPreview, c
           Text({ content: "No changes have been made.", fg: theme.muted }),
         ),
       ),
-    Text({ content: "b: dashboard  esc: dashboard, then exit prompt  r: refresh", fg: theme.muted }),
+    KeyHelp([
+      ["r", "refresh preview"],
+      ["b / esc", "back to dashboard"],
+    ]),
     StatusBar(state),
   )
 }

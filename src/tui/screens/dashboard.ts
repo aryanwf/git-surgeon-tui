@@ -1,5 +1,6 @@
 import { Box, Text } from "@opentui/core"
 import type { RepositoryState } from "../../git/repository"
+import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -25,7 +26,10 @@ export function DashboardScreen(state: RepositoryState, notice?: string) {
       ),
       ...(notice ? [Text({ content: notice, fg: theme.danger })] : []),
     ),
-    Text({ content: "r: refresh  esc: exit prompt  q: quit", fg: theme.muted }),
+    KeyHelp([
+      ["r", "refresh repository status"],
+      ["esc", "show exit prompt"],
+    ]),
     StatusBar(state),
   )
 }

@@ -223,6 +223,7 @@ export type AppState = {
   exitPrompt: boolean
   historyQuery: string
   historyQueryCursor: number
+  historyFilterActive: boolean
   selectedCommitIndex: number
   historyScrollOffset: number
   // Populated during history screen render so rewrite flow triggers have the commit data.

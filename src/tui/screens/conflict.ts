@@ -1,5 +1,6 @@
 import { Box, Text } from "@opentui/core"
 import type { RepositoryState } from "../../git/repository"
+import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -39,7 +40,12 @@ export function ConflictScreen(state: RepositoryState, conflict: ConflictState) 
       ),
       recoveryCommandsBox(state),
     ),
-    Text({ content: "c: git rebase --continue  s: git rebase --skip  a: git rebase --abort  b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["c", "git rebase --continue"],
+      ["s", "git rebase --skip"],
+      ["a", "git rebase --abort"],
+      ["b / esc", "back to dashboard"],
+    ]),
     StatusBar(state),
   )
 }

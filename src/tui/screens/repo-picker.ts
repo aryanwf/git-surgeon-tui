@@ -1,4 +1,5 @@
 import { Box, Text, type SelectOption } from "@opentui/core"
+import { KeyHelp } from "../components/key-help"
 import { AppFrame, theme } from "../layout"
 
 export type RepoPickerOption = SelectOption & { value: string }
@@ -28,7 +29,14 @@ export function RepoPickerScreen(paths: string[], query: string, queryCursor: nu
         })
         : [Text({ content: "No repositories match the current search", fg: theme.muted })]),
     ),
-    Text({ content: "type: search  left/right: move cursor  backspace/delete: edit  enter: open repo", fg: theme.muted }),
+    KeyHelp([
+      ["type", "search repositories"],
+      ["↑/↓", "select repository"],
+      ["←/→", "move search cursor"],
+      ["backspace", "edit search"],
+      ["enter", "open repository"],
+      ["esc", "show exit prompt"],
+    ]),
     Text({ content: error ?? "", fg: theme.danger }),
   )
 }

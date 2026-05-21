@@ -1,5 +1,6 @@
 import { Box, Text } from "@opentui/core"
 import type { RepositoryState } from "../../git/repository"
+import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -9,7 +10,7 @@ export function HelpScreen(state?: RepositoryState) {
     Box(
       { flexDirection: "column", gap: 1, flexGrow: 1 },
       section("Navigation", [
-        "?: help    b: dashboard    r: refresh    esc: dashboard, then exit prompt    q: quit",
+        "?: help    b: dashboard    r: refresh    esc: back, exit prompt on dashboard",
         "Dashboard: h history, p preview, s size analysis, v recovery",
         "History: j/k select, type to filter, backspace deletes filter text",
       ]),
@@ -24,7 +25,9 @@ export function HelpScreen(state?: RepositoryState) {
         "Config is stored at $XDG_CONFIG_HOME/gitsurgeon/config.json or ~/.config/gitsurgeon/config.json.",
       ]),
     ),
-    Text({ content: "b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["b / esc", "back to dashboard"],
+    ]),
     StatusBar(state),
   )
 }

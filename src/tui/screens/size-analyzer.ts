@@ -1,6 +1,7 @@
 import { Box, Text } from "@opentui/core"
 import type { RepositoryState } from "../../git/repository"
 import type { SizeAnalyzerResult } from "../../git/size-analyzer"
+import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -17,7 +18,10 @@ export function SizeAnalyzerScreen(state: RepositoryState, result: SizeAnalyzerR
       })),
     ),
     Text({ content: "Native read-only fallback is shown. CLI size command also supports --method filter-repo.", fg: theme.muted }),
-    Text({ content: "b/esc: dashboard  r: refresh", fg: theme.muted }),
+    KeyHelp([
+      ["r", "refresh analysis"],
+      ["b / esc", "back to dashboard"],
+    ]),
     StatusBar(state),
   )
 }

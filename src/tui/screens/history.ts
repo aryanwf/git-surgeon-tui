@@ -1,17 +1,18 @@
 import { Box, Text } from "@opentui/core"
 import type { CommitSummary } from "../../git/log"
 import type { RepositoryState } from "../../git/repository"
+import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
-export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], selectedIndex: number, scrollOffset: number, query: string, queryCursor: number, diff: string) {
+export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], selectedIndex: number, scrollOffset: number, query: string, queryCursor: number, diff: string, filterActive = false) {
   const selected = commits[selectedIndex]
   const visibleLimit = 18
   const visibleStart = visibleWindowStart(commits.length, selectedIndex, scrollOffset, visibleLimit)
   const visibleEnd = Math.min(commits.length, visibleStart + visibleLimit)
   return AppFrame(
     "History And Diff",
-    Text({ content: `Filter: ${query ? editableText(query, queryCursor) : "|(type to search)"}   ${commits.length} commit(s)   showing ${commits.length === 0 ? 0 : visibleStart + 1}-${visibleEnd}`, fg: theme.muted }),
+    Text({ content: `Filter: ${filterActive ? editableText(query, queryCursor) : query || "(press f to filter)"}   ${commits.length} commit(s)   showing ${commits.length === 0 ? 0 : visibleStart + 1}-${visibleEnd}`, fg: filterActive ? theme.accent : theme.muted }),
     Box(
       { flexDirection: "row", gap: 1, flexGrow: 1 },
       Box(
@@ -24,7 +25,20 @@ export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], 
         ...previewLines(diff, 24).map((line) => Text({ content: line, fg: lineColor(line) })),
       ),
     ),
-    Text({ content: "j/k: select  left/right: filter cursor  type: filter  m/w/d/a/t/s/i: actions  b/esc: dashboard", fg: theme.muted }),
+    KeyHelp([
+      ["↑/↓", "select commit"],
+      // ["←/→", "move active filter cursor"],
+      ["f", "filter commits"],
+      // ["type", "edit active filter"],
+      ["w", "edit commit name"],
+      ["a", "change author name"],
+      ["t", "change commit date"],
+      ["d", "drop commit"],
+      ["s", "split commit"],
+      ["m", "edit multiple commits"],
+      ["i", "visual rebase"],
+      ["b / esc", "back to dashboard"],
+    ]),
     StatusBar(state),
   )
 }

@@ -71,7 +71,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           const scrollOffset = visibleWindowStart(commits.length, selectedIndex, state.historyScrollOffset, 18)
           const diff = commits[selectedIndex] ? await getCommitDiff(repository.repoPath, commits[selectedIndex].sha) : ""
           state = { ...state, selectedCommitIndex: selectedIndex, historyScrollOffset: scrollOffset, lastSelectedCommit: commits[selectedIndex] }
-          mount(HistoryScreen(repository, commits, selectedIndex, scrollOffset, state.historyQuery, state.historyQueryCursor, diff))
+          mount(HistoryScreen(repository, commits, selectedIndex, scrollOffset, state.historyQuery, state.historyQueryCursor, diff, state.historyFilterActive))
         } else if (state.screen === "size-analyzer") {
           const result = await analyzeRepositorySize({ repoPath: repository.repoPath, limit: 20 })
           mount(SizeAnalyzerScreen(repository, result))
@@ -443,7 +443,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
       return
     }
     if (key.name === "b" && state.screen !== "repo-picker") {
-      state = { ...state, screen: "dashboard", rewriteFlow: undefined }
+      state = backState(state)
       void render()
       return
     }
@@ -879,6 +879,12 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           void render()
           return
         }
+        if (key.name === "up" || key.name === "down") {
+          const direction = key.name === "up" ? -1 : 1
+          state = { ...state, rewriteFlow: { ...flow, selectedPartIndex: (flow.selectedPartIndex + direction + flow.parts.length) % flow.parts.length } }
+          void render()
+          return
+        }
         if (key.name === "backspace" || key.name === "delete") {
           state = { ...state, rewriteFlow: updateSelectedSplitPart(flow, key) }
           void render()
@@ -896,6 +902,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         void render()
         return
       }
+      if (flow.activeField !== "paths") return
       if (key.name === "up" || key.name === "k") {
         state = { ...state, rewriteFlow: { ...flow, selectedPathIndex: Math.max(0, flow.selectedPathIndex - 1) } }
         void render()
@@ -1078,7 +1085,7 @@ function visibleWindowStart(total: number, selectedIndex: number, scrollOffset: 
 }
 
 function isTypableChar(key: KeyEvent): boolean {
-  return !key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " " && key.name !== "q"
+  return !key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " "
 }
 
 function editText(value: string, cursor: number | undefined, key: KeyEvent): { value: string; cursor: number } | undefined {
@@ -1098,6 +1105,7 @@ function editText(value: string, cursor: number | undefined, key: KeyEvent): { v
 
 function backState(state: AppState): AppState {
   const flow = state.rewriteFlow
+  if (state.screen === "history" && state.historyFilterActive) return { ...state, historyFilterActive: false, exitPrompt: false }
   if (!flow) return { ...state, screen: "dashboard", exitPrompt: false }
 
   if (flow.type === "reword") {
@@ -1139,6 +1147,16 @@ function backState(state: AppState): AppState {
 }
 
 function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
+  if (state.historyFilterActive) {
+    if (key.name === "escape") return { ...state, historyFilterActive: false }
+    const queryEdit = editText(state.historyQuery, state.historyQueryCursor, key)
+    if (queryEdit) return { ...state, historyQuery: queryEdit.value, historyQueryCursor: queryEdit.cursor, selectedCommitIndex: 0, historyScrollOffset: 0 }
+    return state
+  }
+
+  if (key.sequence === "f") {
+    return { ...state, historyFilterActive: true, historyQueryCursor: state.historyQuery.length }
+  }
   if (key.name === "up" || key.name === "k") {
     return { ...state, selectedCommitIndex: Math.max(0, state.selectedCommitIndex - 1), historyScrollOffset: Math.max(0, state.historyScrollOffset - (state.selectedCommitIndex <= state.historyScrollOffset ? 1 : 0)) }
   }
@@ -1151,8 +1169,6 @@ function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
   if (key.name === "pagedown") {
     return { ...state, selectedCommitIndex: state.selectedCommitIndex + 18, historyScrollOffset: state.historyScrollOffset + 18 }
   }
-  const queryEdit = editText(state.historyQuery, state.historyQueryCursor, key)
-
   if (!key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " ") {
     // Rewrite flow triggers require a selected commit from last render.
     if (key.sequence === "w" && state.lastSelectedCommit) {
@@ -1176,12 +1192,7 @@ function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
     if (key.sequence === "m") {
       return startHistoryListEditFlow(state)
     }
-    // Otherwise append to search filter, excluding shortcut keys.
-    if (queryEdit && key.sequence !== "q" && key.sequence !== "w" && key.sequence !== "d" && key.sequence !== "a" && key.sequence !== "t" && key.sequence !== "s" && key.sequence !== "i" && key.sequence !== "m") {
-      return { ...state, historyQuery: queryEdit.value, historyQueryCursor: queryEdit.cursor, selectedCommitIndex: 0, historyScrollOffset: 0 }
-    }
   }
-  if (queryEdit && !isTypableChar(key)) return { ...state, historyQuery: queryEdit.value, historyQueryCursor: queryEdit.cursor, selectedCommitIndex: 0, historyScrollOffset: 0 }
   return state
 }
 

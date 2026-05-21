@@ -12,6 +12,7 @@ export function createInitialState(repoPath?: string): AppState {
     exitPrompt: false,
     historyQuery: "",
     historyQueryCursor: 0,
+    historyFilterActive: false,
     selectedCommitIndex: 0,
     historyScrollOffset: 0,
   }

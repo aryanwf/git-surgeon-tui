@@ -117,9 +117,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 messages: [{ sha: flow.selectedSha, message: flow.newMessage }],
                 apply: true,
               })
+              const push = await pushForce(repository.repoPath)
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined },
+                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
               }
             } catch (err) {
               state = {
@@ -152,9 +153,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           if (flow.step === "applying") {
             try {
               const result = await dropSingleCommit({ repoPath: repository.repoPath, sha: flow.selectedSha, apply: true })
+              const push = await pushForce(repository.repoPath)
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined },
+                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
               }
             } catch (err) {
               state = {
@@ -200,9 +202,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 mode: flow.mode,
                 apply: true,
               })
+              const push = await pushForce(repository.repoPath)
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined },
+                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
               }
             } catch (err) {
               state = {
@@ -246,9 +249,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 mode: flow.mode,
                 apply: true,
               })
+              const push = await pushForce(repository.repoPath)
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined },
+                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
               }
             } catch (err) {
               state = {
@@ -281,8 +285,8 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           if (flow.step === "applying") {
             try {
               const result = await editCommitHistory({ repoPath: repository.repoPath, operations: toHistoryEditOperations(flow), apply: true })
-              const pushOutput = repository.upstream ? await pushForce(repository.repoPath) : undefined
-              state = { ...state, rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput, error: undefined } }
+              const push = await pushForce(repository.repoPath)
+              state = { ...state, rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined } }
             } catch (err) {
               state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
             }
@@ -315,9 +319,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           if (flow.step === "applying") {
             try {
               const result = await splitSingleCommit({ repoPath: repository.repoPath, sha: flow.selectedSha, parts: toSplitCommitParts(flow), apply: true })
+              const push = await pushForce(repository.repoPath)
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined },
+                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
               }
             } catch (err) {
               state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
@@ -372,9 +377,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 rows: toVisualRebaseRows(flow),
                 apply: true,
               })
+              const push = await pushForce(repository.repoPath)
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined },
+                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
               }
             } catch (err) {
               state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
@@ -1160,9 +1166,14 @@ function toHistoryEditOperations(flow: HistoryListEditState): HistoryEditOperati
   })
 }
 
-async function pushForce(repoPath: string): Promise<string> {
-  const result = await runGitChecked({ repoPath, args: ["push", "-f"] })
-  return (result.stdout || result.stderr).trim() || "Pushed with -f"
+async function pushForce(repoPath: string): Promise<{ pushOutput?: string; pushError?: string }> {
+  try {
+    const result = await runGitChecked({ cwd: repoPath, args: ["push", "-f"] })
+    return { pushOutput: (result.stdout || result.stderr).trim() || "git push -f succeeded" }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { pushError: `git push -f failed: ${message}` }
+  }
 }
 
 function updateSelectedHistoryEditRow(flow: HistoryListEditState, update: (row: HistoryEditDraft) => HistoryEditDraft): HistoryListEditState {

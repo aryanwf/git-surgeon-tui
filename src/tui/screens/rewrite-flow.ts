@@ -67,6 +67,8 @@ function RewordResultScreen(state: RepositoryState, flow: RewriteRewordState) {
     Box(
       { flexDirection: "column", gap: 1 },
       Text({ content: "Commit message renamed successfully.", fg: theme.ok }),
+      ...(flow.pushOutput ? [Text({ content: `Remote update: ${flow.pushOutput}`, fg: theme.ok })] : []),
+      ...(flow.pushError ? [Text({ content: flow.pushError, fg: theme.danger })] : []),
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
@@ -146,6 +148,8 @@ function DropResultScreen(state: RepositoryState, flow: RewriteDropState) {
     Box(
       { flexDirection: "column", gap: 1 },
       Text({ content: "Commit dropped successfully.", fg: theme.ok }),
+      ...(flow.pushOutput ? [Text({ content: `Remote update: ${flow.pushOutput}`, fg: theme.ok })] : []),
+      ...(flow.pushError ? [Text({ content: flow.pushError, fg: theme.danger })] : []),
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
@@ -257,6 +261,8 @@ function AuthorResultScreen(state: RepositoryState, flow: RewriteAuthorState) {
     Box(
       { flexDirection: "column", gap: 1 },
       Text({ content: "Author metadata changed successfully.", fg: theme.ok }),
+      ...(flow.pushOutput ? [Text({ content: `Remote update: ${flow.pushOutput}`, fg: theme.ok })] : []),
+      ...(flow.pushError ? [Text({ content: flow.pushError, fg: theme.danger })] : []),
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
@@ -342,6 +348,8 @@ function DateResultScreen(state: RepositoryState, flow: RewriteDateState) {
     Box(
       { flexDirection: "column", gap: 1 },
       Text({ content: "Commit date changed successfully.", fg: theme.ok }),
+      ...(flow.pushOutput ? [Text({ content: `Remote update: ${flow.pushOutput}`, fg: theme.ok })] : []),
+      ...(flow.pushError ? [Text({ content: flow.pushError, fg: theme.danger })] : []),
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
@@ -482,6 +490,7 @@ function HistoryListResultScreen(state: RepositoryState, flow: HistoryListEditSt
       { flexDirection: "column", gap: 1 },
       Text({ content: "Combined history edit applied successfully.", fg: theme.ok }),
       ...(flow.pushOutput ? [Text({ content: `Remote update: ${flow.pushOutput}`, fg: theme.ok })] : []),
+      ...(flow.pushError ? [Text({ content: flow.pushError, fg: theme.danger })] : []),
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
       ...(flow.stashedRef ? [Text({ content: `Local changes were stashed: ${flow.stashedRef}`, fg: theme.muted })] : []),
@@ -576,6 +585,8 @@ function SplitCommitResultScreen(state: RepositoryState, flow: SplitCommitState)
     Box(
       { flexDirection: "column", gap: 1 },
       Text({ content: "Commit split successfully.", fg: theme.ok }),
+      ...(flow.pushOutput ? [Text({ content: `Remote update: ${flow.pushOutput}`, fg: theme.ok })] : []),
+      ...(flow.pushError ? [Text({ content: flow.pushError, fg: theme.danger })] : []),
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),
@@ -668,6 +679,8 @@ function VisualRebaseResultScreen(state: RepositoryState, flow: VisualRebaseStat
     Box(
       { flexDirection: "column", gap: 1 },
       Text({ content: "Visual interactive rebase applied successfully.", fg: theme.ok }),
+      ...(flow.pushOutput ? [Text({ content: `Remote update: ${flow.pushOutput}`, fg: theme.ok })] : []),
+      ...(flow.pushError ? [Text({ content: flow.pushError, fg: theme.danger })] : []),
       ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
       ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
     ),

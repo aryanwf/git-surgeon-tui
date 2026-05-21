@@ -50,6 +50,8 @@ export type RewriteRewordState = {
   preview?: RenamePreview
   backupRef?: string
   operationLogPath?: string
+  pushOutput?: string
+  pushError?: string
   error?: string
 }
 
@@ -62,6 +64,8 @@ export type RewriteDropState = {
   preview?: DropCommitPreview
   backupRef?: string
   operationLogPath?: string
+  pushOutput?: string
+  pushError?: string
   error?: string
 }
 
@@ -83,6 +87,8 @@ export type RewriteAuthorState = {
   preview?: ChangeCommitAuthorPreview
   backupRef?: string
   operationLogPath?: string
+  pushOutput?: string
+  pushError?: string
   error?: string
 }
 
@@ -101,6 +107,8 @@ export type RewriteDateState = {
   preview?: ChangeCommitDatePreview
   backupRef?: string
   operationLogPath?: string
+  pushOutput?: string
+  pushError?: string
   error?: string
 }
 
@@ -138,6 +146,7 @@ export type HistoryListEditState = {
   backupRef?: string
   operationLogPath?: string
   pushOutput?: string
+  pushError?: string
   error?: string
 }
 
@@ -159,6 +168,8 @@ export type SplitCommitState = {
   preview?: SplitCommitPreview
   backupRef?: string
   operationLogPath?: string
+  pushOutput?: string
+  pushError?: string
   error?: string
 }
 
@@ -173,6 +184,8 @@ export type VisualRebaseState = {
   preview?: VisualRebasePreview
   backupRef?: string
   operationLogPath?: string
+  pushOutput?: string
+  pushError?: string
   error?: string
 }
 

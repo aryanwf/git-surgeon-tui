@@ -418,10 +418,33 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
     void render()
   }
 
+  const handleCurrentScreenKey = (key: KeyEvent) => {
+    if (state.screen === "history") {
+      const nextState = handleHistoryKey(state, key)
+      if (nextState !== state) { state = nextState; void render() }
+      return
+    }
+
+    if (state.screen === "conflict") { handleConflictKey(key); return }
+    if (state.screen === "recovery") { handleRecoveryKey(key); return }
+    if (state.screen === "rewrite-reword") { handleRewordKey(key); return }
+    if (state.screen === "rewrite-drop") { handleDropKey(key); return }
+    if (state.screen === "rewrite-author") { handleAuthorKey(key); return }
+    if (state.screen === "rewrite-date") { handleDateKey(key); return }
+    if (state.screen === "rewrite-history-list") { handleHistoryListEditKey(key); return }
+    if (state.screen === "rewrite-split") { handleSplitKey(key); return }
+    if (state.screen === "rewrite-visual-rebase") { handleVisualRebaseKey(key); return }
+  }
+
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     if (state.screen === "repo-picker") {
       const nextState = handleRepoPickerKey(state, key, pickerPaths, selectRepo, renderer.destroy.bind(renderer))
       if (nextState !== state) { state = nextState; void render() }
+      return
+    }
+
+    if (isTextEntryActive(state) && isTypableChar(key)) {
+      handleCurrentScreenKey(key)
       return
     }
 
@@ -459,30 +482,23 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
 
     // History screen: navigation + rewrite triggers
     if (state.screen === "history") {
-      const nextState = handleHistoryKey(state, key)
-      if (nextState !== state) { state = nextState; void render() }
+      handleCurrentScreenKey(key)
       return
     }
 
     // Conflict screen
     if (state.screen === "conflict") {
-      handleConflictKey(key)
+      handleCurrentScreenKey(key)
       return
     }
 
     if (state.screen === "recovery") {
-      handleRecoveryKey(key)
+      handleCurrentScreenKey(key)
       return
     }
 
     // Rewrite flow screens
-    if (state.screen === "rewrite-reword") { handleRewordKey(key); return }
-    if (state.screen === "rewrite-drop") { handleDropKey(key); return }
-    if (state.screen === "rewrite-author") { handleAuthorKey(key); return }
-    if (state.screen === "rewrite-date") { handleDateKey(key); return }
-    if (state.screen === "rewrite-history-list") { handleHistoryListEditKey(key); return }
-    if (state.screen === "rewrite-split") { handleSplitKey(key); return }
-    if (state.screen === "rewrite-visual-rebase") { handleVisualRebaseKey(key); return }
+    if (state.screen.startsWith("rewrite-")) { handleCurrentScreenKey(key); return }
   })
 
   // Conflict handlers
@@ -772,12 +788,12 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         void render()
         return
       }
-      if (key.name === "up" || key.name === "k") {
+      if (key.name === "up") {
         state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.max(0, flow.selectedRowIndex - 1) } }
         void render()
         return
       }
-      if (key.name === "down" || key.name === "j") {
+      if (key.name === "down") {
         state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.min(Math.max(0, rows.length - 1), flow.selectedRowIndex + 1) } }
         void render()
         return
@@ -822,12 +838,12 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         void render()
         return
       }
-      if (key.name === "up" || key.name === "k") {
+      if (key.name === "up") {
         state = { ...state, rewriteFlow: { ...flow, previewScrollOffset: Math.max(0, flow.previewScrollOffset - 1) } }
         void render()
         return
       }
-      if (key.name === "down" || key.name === "j") {
+      if (key.name === "down") {
         state = { ...state, rewriteFlow: { ...flow, previewScrollOffset: flow.previewScrollOffset + 1 } }
         void render()
         return
@@ -903,12 +919,12 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         return
       }
       if (flow.activeField !== "paths") return
-      if (key.name === "up" || key.name === "k") {
+      if (key.name === "up") {
         state = { ...state, rewriteFlow: { ...flow, selectedPathIndex: Math.max(0, flow.selectedPathIndex - 1) } }
         void render()
         return
       }
-      if (key.name === "down" || key.name === "j") {
+      if (key.name === "down") {
         state = { ...state, rewriteFlow: { ...flow, selectedPathIndex: Math.min(Math.max(0, paths.length - 1), flow.selectedPathIndex + 1) } }
         void render()
         return
@@ -980,12 +996,12 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           return
         }
       }
-      if (key.name === "up" || key.name === "k") {
+      if (key.name === "up") {
         state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.max(0, flow.selectedRowIndex - 1) } }
         void render()
         return
       }
-      if (key.name === "down" || key.name === "j") {
+      if (key.name === "down") {
         state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.min(Math.max(0, rows.length - 1), flow.selectedRowIndex + 1) } }
         void render()
         return
@@ -1066,8 +1082,8 @@ function handleRepoPickerKey(state: AppState, key: KeyEvent, paths: string[], se
     if (state.exitPrompt) exit()
     return { ...state, exitPrompt: true, error: "press esc again to exit" }
   }
-  if (key.name === "up" || key.name === "k") return { ...state, selectedRepoIndex: Math.max(0, state.selectedRepoIndex - 1), exitPrompt: false }
-  if (key.name === "down" || key.name === "j") return { ...state, selectedRepoIndex: Math.min(Math.max(0, filtered.length - 1), state.selectedRepoIndex + 1), exitPrompt: false }
+  if (key.name === "up") return { ...state, selectedRepoIndex: Math.max(0, state.selectedRepoIndex - 1), exitPrompt: false }
+  if (key.name === "down") return { ...state, selectedRepoIndex: Math.min(Math.max(0, filtered.length - 1), state.selectedRepoIndex + 1), exitPrompt: false }
   const queryEdit = editText(state.repoQuery, state.repoQueryCursor, key)
   if (queryEdit) return { ...state, repoQuery: queryEdit.value, repoQueryCursor: queryEdit.cursor, selectedRepoIndex: 0, exitPrompt: false, error: undefined }
   return state.exitPrompt ? { ...state, exitPrompt: false, error: undefined } : state
@@ -1086,6 +1102,20 @@ function visibleWindowStart(total: number, selectedIndex: number, scrollOffset: 
 
 function isTypableChar(key: KeyEvent): boolean {
   return !key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " "
+}
+
+function isTextEntryActive(state: AppState): boolean {
+  if (state.screen === "history") return state.historyFilterActive
+  const flow = state.rewriteFlow
+  if (!flow) return false
+
+  if (flow.type === "reword") return flow.step === "form"
+  if (flow.type === "author") return flow.step === "form" && flow.activeField !== "mode"
+  if (flow.type === "date") return flow.step === "form" && flow.activeField === "date"
+  if (flow.type === "history-list") return (flow.step === "form" && flow.activeField !== "list") || flow.step === "upstream-confirm"
+  if (flow.type === "split") return flow.step === "form" && flow.activeField === "message"
+  if (flow.type === "visual-rebase") return flow.step === "form" && flow.activeField !== "list"
+  return false
 }
 
 function editText(value: string, cursor: number | undefined, key: KeyEvent): { value: string; cursor: number } | undefined {
@@ -1157,10 +1187,10 @@ function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
   if (key.sequence === "f") {
     return { ...state, historyFilterActive: true, historyQueryCursor: state.historyQuery.length }
   }
-  if (key.name === "up" || key.name === "k") {
+  if (key.name === "up") {
     return { ...state, selectedCommitIndex: Math.max(0, state.selectedCommitIndex - 1), historyScrollOffset: Math.max(0, state.historyScrollOffset - (state.selectedCommitIndex <= state.historyScrollOffset ? 1 : 0)) }
   }
-  if (key.name === "down" || key.name === "j") {
+  if (key.name === "down") {
     return { ...state, selectedCommitIndex: state.selectedCommitIndex + 1 }
   }
   if (key.name === "pageup") {

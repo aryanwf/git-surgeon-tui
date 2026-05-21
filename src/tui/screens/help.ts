@@ -12,7 +12,7 @@ export function HelpScreen(state?: RepositoryState) {
       section("Navigation", [
         "?: help    b: dashboard    r: refresh    esc: back, exit prompt on dashboard",
         "Dashboard: h history, p preview, s size analysis, v recovery",
-        "History: j/k select, type to filter, backspace deletes filter text",
+        "History: arrow keys select, type to filter, backspace deletes filter text",
       ]),
       section("Rewrite Flows", [
         "w: rename commit    d: drop commit    s: split commit    a: author    t: date    i: visual rebase",

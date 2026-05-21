@@ -3,6 +3,7 @@ import { dropSingleCommit } from "./git/drop"
 import { splitSingleCommit, type SplitCommitPart } from "./git/split"
 import { visualInteractiveRebase, type VisualRebaseRow } from "./git/rebase"
 import { changeOldCommitDate, type DateChangeMode } from "./git/date"
+import { analyzeRepositorySize, type SizeAnalyzerMethod, type SizeAnalyzerSort, type SizeAnalyzerStatus } from "./git/size-analyzer"
 
 type CliOptions = {
   repo?: string
@@ -13,14 +14,32 @@ type CliOptions = {
   base?: string
   date?: string
   mode?: DateChangeMode
+  method?: SizeAnalyzerMethod
+  sortBy?: SizeAnalyzerSort
+  status?: SizeAnalyzerStatus
+  limit?: number
   apply: boolean
 }
 
 async function main(args: string[]): Promise<void> {
   const [command, ...rest] = args
-  if (command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase" && command !== "date") {
+  if (command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase" && command !== "date" && command !== "size") {
     printUsage()
     process.exit(command ? 1 : 0)
+  }
+
+  if (command === "size") {
+    const options = parseSizeArgs(rest)
+    if (!options.repo) throw new Error("Missing --repo <path>")
+    const result = await analyzeRepositorySize({ repoPath: options.repo, method: options.method, sortBy: options.sortBy, status: options.status, limit: options.limit })
+
+    console.log(`Analyzed repository size with ${result.method}`)
+    console.log(`Sorted by: ${result.sortBy}`)
+    console.log("Unpacked\tPacked\tStatus\tObject ID\tPath(s)")
+    for (const row of result.rows) {
+      console.log(`${formatSize(row.unpackedSize)}\t${formatSize(row.packedSize)}\t${row.status}\t${row.objectId || "-"}\t${row.paths.join(", ")}`)
+    }
+    return
   }
 
   if (command === "date") {
@@ -35,6 +54,7 @@ async function main(args: string[]): Promise<void> {
     console.log(`Old HEAD: ${result.preview.oldHead}`)
     console.log(`New HEAD: ${result.preview.newHead}`)
     console.log(`Changed commits: ${result.preview.changedCommitCount}`)
+    printHistoryPreview(result.preview)
     console.log("New verification log:")
     console.log(result.preview.newLog.trimEnd())
     if (result.backupRef) console.log(`Backup ref: ${result.backupRef}`)
@@ -53,6 +73,7 @@ async function main(args: string[]): Promise<void> {
     console.log(`Old HEAD: ${result.preview.oldHead}`)
     console.log(`New HEAD: ${result.preview.newHead}`)
     console.log(`Changed commits: ${result.preview.changedCommitCount}`)
+    printHistoryPreview(result.preview)
     console.log("Generated todo:")
     console.log(result.preview.todo.trimEnd())
     if (result.preview.droppedCommitIds.length > 0) console.log(`Dropped commits: ${result.preview.droppedCommitIds.join(", ")}`)
@@ -72,6 +93,7 @@ async function main(args: string[]): Promise<void> {
     console.log(`Old HEAD: ${result.preview.oldHead}`)
     console.log(`New HEAD: ${result.preview.newHead}`)
     console.log(`Changed commits: ${result.preview.changedCommitCount}`)
+    printHistoryPreview(result.preview)
     console.log(`Split commits: ${result.preview.splitCommitIds.join(", ")}`)
     if (result.backupRef) console.log(`Backup ref: ${result.backupRef}`)
     if (result.operationLogPath) console.log(`Operation log: ${result.operationLogPath}`)
@@ -89,6 +111,7 @@ async function main(args: string[]): Promise<void> {
     console.log(`Old HEAD: ${result.preview.oldHead}`)
     console.log(`New HEAD: ${result.preview.newHead}`)
     console.log(`Changed commits: ${result.preview.changedCommitCount}`)
+    printHistoryPreview(result.preview)
     console.log(`Dropped commit: ${result.preview.droppedCommitIds[0]}`)
     if (result.backupRef) console.log(`Backup ref: ${result.backupRef}`)
     if (result.operationLogPath) console.log(`Operation log: ${result.operationLogPath}`)
@@ -104,9 +127,32 @@ async function main(args: string[]): Promise<void> {
   console.log(`Old HEAD: ${result.preview.oldHead}`)
   console.log(`New HEAD: ${result.preview.newHead}`)
   console.log(`Changed commits: ${result.preview.changedCommitCount}`)
+  printHistoryPreview(result.preview)
   if (result.backupRef) console.log(`Backup ref: ${result.backupRef}`)
   if (result.operationLogPath) console.log(`Operation log: ${result.operationLogPath}`)
   for (const warning of result.preview.warnings) console.warn(`Warning: ${warning}`)
+}
+
+function printHistoryPreview(preview: {
+  oldGraph: string
+  newGraph: string
+  oldMetadata: string
+  newMetadata: string
+  finalDiffStat: string
+  finalDiffPatch: string
+}): void {
+  console.log("Before graph:")
+  console.log(preview.oldGraph.trimEnd() || "(empty)")
+  console.log("After graph:")
+  console.log(preview.newGraph.trimEnd() || "(empty)")
+  console.log("Before metadata:")
+  console.log(preview.oldMetadata.trimEnd() || "(empty)")
+  console.log("After metadata:")
+  console.log(preview.newMetadata.trimEnd() || "(empty)")
+  console.log("Final diff stat:")
+  console.log(preview.finalDiffStat.trimEnd() || "(no tree changes)")
+  console.log("Final diff:")
+  console.log(preview.finalDiffPatch.trimEnd() || "(no tree changes)")
 }
 
 function parseDropArgs(args: string[]): CliOptions {
@@ -176,6 +222,20 @@ function parseDateArgs(args: string[]): CliOptions {
   return options
 }
 
+function parseSizeArgs(args: string[]): CliOptions {
+  const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === "--repo") options.repo = args[++index]
+    else if (arg === "--method") options.method = parseSizeMethod(args[++index])
+    else if (arg === "--sort") options.sortBy = parseSizeSort(args[++index])
+    else if (arg === "--status") options.status = parseSizeStatus(args[++index])
+    else if (arg === "--limit") options.limit = parseLimit(args[++index])
+    else throw new Error(`Unknown argument: ${arg}`)
+  }
+  return options
+}
+
 function parseMessageArg(value: string | undefined): RenameCommitMessage {
   if (!value) throw new Error("Missing --message value")
   const separator = value.indexOf("=")
@@ -213,12 +273,46 @@ function parseDateMode(value: string | undefined): DateChangeMode {
   throw new Error("Date mode must be author, committer, or both")
 }
 
+function parseSizeMethod(value: string | undefined): SizeAnalyzerMethod {
+  if (value === "native" || value === "filter-repo") return value
+  throw new Error("Size analyzer method must be native or filter-repo")
+}
+
+function parseSizeSort(value: string | undefined): SizeAnalyzerSort {
+  if (value === "unpacked" || value === "packed") return value
+  throw new Error("Size analyzer sort must be unpacked or packed")
+}
+
+function parseSizeStatus(value: string | undefined): SizeAnalyzerStatus {
+  if (value === "all" || value === "present" || value === "deleted") return value
+  throw new Error("Size analyzer status must be all, present, or deleted")
+}
+
+function parseLimit(value: string | undefined): number {
+  const limit = Number(value)
+  if (Number.isInteger(limit) && limit > 0) return limit
+  throw new Error("Limit must be a positive integer")
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ["KiB", "MiB", "GiB"]
+  let value = bytes / 1024
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`
+}
+
 function printUsage(): void {
   console.log("Usage: bun src/index.ts rename --repo <path> --message <sha=message> [--message <sha=message>] [--apply]")
   console.log("       bun src/index.ts drop --repo <path> --sha <commit> [--apply]")
   console.log("       bun src/index.ts split --repo <path> --sha <commit> --part <message:path,path> --part <message:path> [--apply]")
   console.log("       bun src/index.ts rebase --repo <path> --base <commit> --row <action:sha[:message-or-command]> [--row ...] [--apply]")
   console.log("       bun src/index.ts date --repo <path> --sha <commit> --date <iso-8601> --mode <author|committer|both> [--apply]")
+  console.log("       bun src/index.ts size --repo <path> [--method <native|filter-repo>] [--sort <unpacked|packed>] [--status <all|present|deleted>] [--limit <n>]")
 }
 
 if (import.meta.main) {
@@ -233,3 +327,5 @@ export { dropSingleCommit } from "./git/drop"
 export { splitSingleCommit } from "./git/split"
 export { visualInteractiveRebase } from "./git/rebase"
 export { changeOldCommitDate } from "./git/date"
+export { analyzeRepositorySize } from "./git/size-analyzer"
+export { buildHistoryPreview, historyRange, type HistoryPreview } from "./git/preview"

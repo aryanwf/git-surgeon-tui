@@ -4,6 +4,7 @@ import { splitSingleCommit, type SplitCommitPart } from "./git/split"
 import { visualInteractiveRebase, type VisualRebaseRow } from "./git/rebase"
 import { changeOldCommitDate, type DateChangeMode } from "./git/date"
 import { analyzeRepositorySize, type SizeAnalyzerMethod, type SizeAnalyzerSort, type SizeAnalyzerStatus } from "./git/size-analyzer"
+import { runGitSurgeonTui } from "./app"
 
 type CliOptions = {
   repo?: string
@@ -23,9 +24,15 @@ type CliOptions = {
 
 async function main(args: string[]): Promise<void> {
   const [command, ...rest] = args
-  if (command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase" && command !== "date" && command !== "size") {
+  if (command !== "tui" && command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase" && command !== "date" && command !== "size") {
     printUsage()
     process.exit(command ? 1 : 0)
+  }
+
+  if (command === "tui") {
+    const options = parseTuiArgs(rest)
+    await runGitSurgeonTui({ repoPath: options.repo })
+    return
   }
 
   if (command === "size") {
@@ -153,6 +160,16 @@ function printHistoryPreview(preview: {
   console.log(preview.finalDiffStat.trimEnd() || "(no tree changes)")
   console.log("Final diff:")
   console.log(preview.finalDiffPatch.trimEnd() || "(no tree changes)")
+}
+
+function parseTuiArgs(args: string[]): Pick<CliOptions, "repo"> {
+  const options: Pick<CliOptions, "repo"> = {}
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === "--repo") options.repo = args[++index]
+    else throw new Error(`Unknown argument: ${arg}`)
+  }
+  return options
 }
 
 function parseDropArgs(args: string[]): CliOptions {
@@ -307,6 +324,7 @@ function formatSize(bytes: number): string {
 }
 
 function printUsage(): void {
+  console.log("Usage: bun src/index.ts tui [--repo <path>]")
   console.log("Usage: bun src/index.ts rename --repo <path> --message <sha=message> [--message <sha=message>] [--apply]")
   console.log("       bun src/index.ts drop --repo <path> --sha <commit> [--apply]")
   console.log("       bun src/index.ts split --repo <path> --sha <commit> --part <message:path,path> --part <message:path> [--apply]")

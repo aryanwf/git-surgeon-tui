@@ -5,6 +5,9 @@ export type GitCommand = {
   env?: Record<string, string | undefined>
   stdin?: string
   timeoutMs?: number
+  signal?: AbortSignal
+  onStdout?: (chunk: string) => void
+  onStderr?: (chunk: string) => void
 }
 
 export type GitCommandResult = {
@@ -15,6 +18,7 @@ export type GitCommandResult = {
   exitCode: number
   durationMs: number
   timedOut: boolean
+  cancelled: boolean
 }
 
 export class GitCommandError extends Error {
@@ -26,8 +30,6 @@ export class GitCommandError extends Error {
     this.name = "GitCommandError"
   }
 }
-
-const decoder = new TextDecoder()
 
 export async function runGit(command: GitCommand): Promise<GitCommandResult> {
   const startedAt = performance.now()
@@ -47,30 +49,45 @@ export async function runGit(command: GitCommand): Promise<GitCommandResult> {
   }
 
   let timedOut = false
+  let cancelled = command.signal?.aborted ?? false
   let timeout: Timer | undefined
+  let terminateTimeout: Timer | undefined
+  const terminate = (reason: "timeout" | "cancelled") => {
+    if (reason === "timeout") timedOut = true
+    if (reason === "cancelled") cancelled = true
+    proc.kill("SIGINT")
+    terminateTimeout = setTimeout(() => proc.kill("SIGTERM"), 1_000)
+  }
+
   if (command.timeoutMs !== undefined) {
-    timeout = setTimeout(() => {
-      timedOut = true
-      proc.kill("SIGTERM")
-    }, command.timeoutMs)
+    timeout = setTimeout(() => terminate("timeout"), command.timeoutMs)
+  }
+
+  const abort = () => terminate("cancelled")
+  if (command.signal) {
+    if (command.signal.aborted) abort()
+    else command.signal.addEventListener("abort", abort, { once: true })
   }
 
   const [stdoutBytes, stderrBytes, exitCode] = await Promise.all([
-    new Response(proc.stdout).arrayBuffer(),
-    new Response(proc.stderr).arrayBuffer(),
+    readStream(proc.stdout, command.onStdout),
+    readStream(proc.stderr, command.onStderr),
     proc.exited,
   ])
 
   if (timeout) clearTimeout(timeout)
+  if (terminateTimeout) clearTimeout(terminateTimeout)
+  if (command.signal) command.signal.removeEventListener("abort", abort)
 
   return {
     args,
     cwd,
-    stdout: decoder.decode(stdoutBytes),
-    stderr: decoder.decode(stderrBytes),
+    stdout: stdoutBytes,
+    stderr: stderrBytes,
     exitCode,
     durationMs: Math.round(performance.now() - startedAt),
     timedOut,
+    cancelled,
   }
 }
 
@@ -80,4 +97,26 @@ export async function runGitChecked(command: GitCommand): Promise<GitCommandResu
     throw new GitCommandError(`git ${result.args.join(" ")} failed with exit code ${result.exitCode}`, result)
   }
   return result
+}
+
+async function readStream(stream: ReadableStream<Uint8Array>, onChunk?: (chunk: string) => void): Promise<string> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let output = ""
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const chunk = decoder.decode(value, { stream: true })
+    output += chunk
+    onChunk?.(chunk)
+  }
+
+  const trailing = decoder.decode()
+  if (trailing) {
+    output += trailing
+    onChunk?.(trailing)
+  }
+
+  return output
 }

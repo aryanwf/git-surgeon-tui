@@ -1,18 +1,59 @@
 import { renameOldCommitMessages, type RenameCommitMessage } from "./git/reword"
 import { dropSingleCommit } from "./git/drop"
+import { splitSingleCommit, type SplitCommitPart } from "./git/split"
+import { visualInteractiveRebase, type VisualRebaseRow } from "./git/rebase"
 
 type CliOptions = {
   repo?: string
   messages: RenameCommitMessage[]
+  parts: SplitCommitPart[]
+  rows: VisualRebaseRow[]
   sha?: string
+  base?: string
   apply: boolean
 }
 
 async function main(args: string[]): Promise<void> {
   const [command, ...rest] = args
-  if (command !== "rename" && command !== "drop") {
+  if (command !== "rename" && command !== "drop" && command !== "split" && command !== "rebase") {
     printUsage()
     process.exit(command ? 1 : 0)
+  }
+
+  if (command === "rebase") {
+    const options = parseRebaseArgs(rest)
+    if (!options.repo) throw new Error("Missing --repo <path>")
+    if (!options.base) throw new Error("Missing --base <commit>")
+    const result = await visualInteractiveRebase({ repoPath: options.repo, base: options.base, rows: options.rows, apply: options.apply })
+
+    console.log(options.apply ? "Applied visual rebase" : "Previewed visual rebase")
+    console.log(`Old HEAD: ${result.preview.oldHead}`)
+    console.log(`New HEAD: ${result.preview.newHead}`)
+    console.log(`Changed commits: ${result.preview.changedCommitCount}`)
+    console.log("Generated todo:")
+    console.log(result.preview.todo.trimEnd())
+    if (result.preview.droppedCommitIds.length > 0) console.log(`Dropped commits: ${result.preview.droppedCommitIds.join(", ")}`)
+    if (result.backupRef) console.log(`Backup ref: ${result.backupRef}`)
+    if (result.operationLogPath) console.log(`Operation log: ${result.operationLogPath}`)
+    for (const warning of result.preview.warnings) console.warn(`Warning: ${warning}`)
+    return
+  }
+
+  if (command === "split") {
+    const options = parseSplitArgs(rest)
+    if (!options.repo) throw new Error("Missing --repo <path>")
+    if (!options.sha) throw new Error("Missing --sha <commit>")
+    const result = await splitSingleCommit({ repoPath: options.repo, sha: options.sha, parts: options.parts, apply: options.apply })
+
+    console.log(options.apply ? "Applied split rewrite" : "Previewed split rewrite")
+    console.log(`Old HEAD: ${result.preview.oldHead}`)
+    console.log(`New HEAD: ${result.preview.newHead}`)
+    console.log(`Changed commits: ${result.preview.changedCommitCount}`)
+    console.log(`Split commits: ${result.preview.splitCommitIds.join(", ")}`)
+    if (result.backupRef) console.log(`Backup ref: ${result.backupRef}`)
+    if (result.operationLogPath) console.log(`Operation log: ${result.operationLogPath}`)
+    for (const warning of result.preview.warnings) console.warn(`Warning: ${warning}`)
+    return
   }
 
   if (command === "drop") {
@@ -46,7 +87,7 @@ async function main(args: string[]): Promise<void> {
 }
 
 function parseDropArgs(args: string[]): CliOptions {
-  const options: CliOptions = { messages: [], apply: false }
+  const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === "--repo") options.repo = args[++index]
@@ -57,8 +98,22 @@ function parseDropArgs(args: string[]): CliOptions {
   return options
 }
 
+function parseSplitArgs(args: string[]): CliOptions {
+  const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === "--repo") options.repo = args[++index]
+    else if (arg === "--apply") options.apply = true
+    else if (arg === "--sha") options.sha = args[++index]
+    else if (arg === "--part") options.parts.push(parsePartArg(args[++index]))
+    else throw new Error(`Unknown argument: ${arg}`)
+  }
+  if (options.parts.length < 2) throw new Error("Pass at least two --part <message:path,path> values")
+  return options
+}
+
 function parseRenameArgs(args: string[]): CliOptions {
-  const options: CliOptions = { messages: [], apply: false }
+  const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === "--repo") options.repo = args[++index]
@@ -70,6 +125,20 @@ function parseRenameArgs(args: string[]): CliOptions {
   return options
 }
 
+function parseRebaseArgs(args: string[]): CliOptions {
+  const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === "--repo") options.repo = args[++index]
+    else if (arg === "--base") options.base = args[++index]
+    else if (arg === "--apply") options.apply = true
+    else if (arg === "--row") options.rows.push(parseRowArg(args[++index]))
+    else throw new Error(`Unknown argument: ${arg}`)
+  }
+  if (options.rows.length === 0) throw new Error("Pass at least one --row <action:sha[:message-or-command]> value")
+  return options
+}
+
 function parseMessageArg(value: string | undefined): RenameCommitMessage {
   if (!value) throw new Error("Missing --message value")
   const separator = value.indexOf("=")
@@ -77,9 +146,36 @@ function parseMessageArg(value: string | undefined): RenameCommitMessage {
   return { sha: value.slice(0, separator), message: value.slice(separator + 1) }
 }
 
+function parsePartArg(value: string | undefined): SplitCommitPart {
+  if (!value) throw new Error("Missing --part value")
+  const separator = value.indexOf(":")
+  if (separator <= 0) throw new Error("Part must use <message:path,path>")
+  const paths = value.slice(separator + 1).split(",").map((path) => path.trim()).filter(Boolean)
+  if (paths.length === 0) throw new Error("Part must include at least one path")
+  return { message: value.slice(0, separator), paths }
+}
+
+function parseRowArg(value: string | undefined): VisualRebaseRow {
+  if (!value) throw new Error("Missing --row value")
+  const [action, sha, ...rest] = value.split(":")
+  if (!action || !sha) throw new Error("Row must use <action:sha[:message-or-command]>")
+  if (!isVisualRebaseAction(action)) throw new Error(`Unsupported rebase action: ${action}`)
+  const payload = rest.join(":")
+  if (action === "exec") return { action, sha, command: payload }
+  if (action === "reword" || action === "squash") return { action, sha, message: payload }
+  if (payload !== "") throw new Error(`Action ${action} does not accept a payload`)
+  return { action, sha }
+}
+
+function isVisualRebaseAction(value: string): value is VisualRebaseRow["action"] {
+  return value === "pick" || value === "reword" || value === "edit" || value === "squash" || value === "fixup" || value === "drop" || value === "exec"
+}
+
 function printUsage(): void {
   console.log("Usage: bun src/index.ts rename --repo <path> --message <sha=message> [--message <sha=message>] [--apply]")
   console.log("       bun src/index.ts drop --repo <path> --sha <commit> [--apply]")
+  console.log("       bun src/index.ts split --repo <path> --sha <commit> --part <message:path,path> --part <message:path> [--apply]")
+  console.log("       bun src/index.ts rebase --repo <path> --base <commit> --row <action:sha[:message-or-command]> [--row ...] [--apply]")
 }
 
 if (import.meta.main) {
@@ -91,3 +187,5 @@ if (import.meta.main) {
 
 export { renameOldCommitMessages } from "./git/reword"
 export { dropSingleCommit } from "./git/drop"
+export { splitSingleCommit } from "./git/split"
+export { visualInteractiveRebase } from "./git/rebase"

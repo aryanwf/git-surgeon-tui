@@ -14,7 +14,7 @@ export function HelpScreen(state?: RepositoryState) {
         "History: j/k select, type to filter, backspace deletes filter text",
       ]),
       section("Rewrite Flows", [
-        "w: reword    d: drop    s: split    a: author    t: date    i: visual rebase",
+        "w: rename commit    d: drop commit    s: split commit    a: author    t: date    i: visual rebase",
         "Every destructive flow runs a scratch preview before applying to the real repository.",
         "Applied rewrites create refs/gitsurgeon/backups/... and an operation JSON log.",
       ]),

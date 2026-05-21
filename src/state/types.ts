@@ -1,6 +1,9 @@
 import type { RepositoryState } from "../git/repository"
 
 export type AppScreen = "repo-picker" | "dashboard"
+  | "history"
+  | "size-analyzer"
+  | "recovery"
 
 export type AppState = {
   screen: AppScreen
@@ -8,4 +11,6 @@ export type AppState = {
   repository?: RepositoryState
   error?: string
   commandLog: string[]
+  historyQuery: string
+  selectedCommitIndex: number
 }

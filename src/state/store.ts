@@ -5,6 +5,8 @@ export function createInitialState(repoPath?: string): AppState {
     screen: repoPath ? "dashboard" : "repo-picker",
     repoPath,
     commandLog: [],
+    historyQuery: "",
+    selectedCommitIndex: 0,
   }
 }
 

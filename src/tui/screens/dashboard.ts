@@ -12,7 +12,7 @@ export function DashboardScreen(state: RepositoryState) {
       { flexDirection: "column", gap: 1 },
       ...rows.map(([label, value]) => Text({ content: `${label.padEnd(14)} ${value}`, fg: theme.text })),
     ),
-    Text({ content: "Foundation mode: repository validation and status overview are active.", fg: theme.muted }),
+    Text({ content: "Read-only tools: h history+diff  s size analysis  v recovery", fg: theme.muted }),
     StatusBar(state),
   )
 }

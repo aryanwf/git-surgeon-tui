@@ -1,10 +1,9 @@
-import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getHeadCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
-import { GitCommandError, runGit, runGitChecked, type GitCommandResult } from "./runner"
+import { runGit, runGitChecked, type GitCommandResult } from "./runner"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog } from "./safety"
 import { buildHistoryPreview, historyRange, type HistoryPreview } from "./preview"
 
@@ -43,6 +42,7 @@ export type ChangeCommitAuthorResult = {
 
 type ChangeCommitAuthorPlan = {
   target: CommitSummary
+  rangeCommits: CommitSummary[]
   newName: string
   newEmail: string
   mode: AuthorChangeMode
@@ -111,6 +111,7 @@ export async function buildChangeCommitAuthorPlan(repoPath: string, sha: string,
 
   return {
     target,
+    rangeCommits,
     newName: name,
     newEmail: email,
     mode,
@@ -158,49 +159,77 @@ async function previewChangeCommitAuthor(repoPath: string, plan: ChangeCommitAut
 }
 
 async function executeChangeCommitAuthorRewrite(repoPath: string, plan: ChangeCommitAuthorPlan): Promise<{ commands: GitCommandResult[]; newTargetSha: string }> {
-  const helperDir = await mkdtemp(join(tmpdir(), "gitsurgeon-author-"))
-  const todoPath = join(helperDir, "todo")
-  const editorPath = join(helperDir, "sequence-editor.sh")
   const commands: GitCommandResult[] = []
 
-  try {
-    await Bun.write(todoPath, plan.todo)
-    await Bun.write(editorPath, `#!/bin/sh\ncp ${shellQuote(todoPath)} "$1"\n`)
-    await runGitChecked({ args: ["update-index", "--refresh"], repoPath })
-    await Bun.spawn(["chmod", "+x", editorPath]).exited
+  // Rebuild the chain commit-by-commit using `git commit-tree`. This preserves
+  // every metadata field (author name/email/date AND committer name/email/date)
+  // exactly for every non-target commit, and applies the requested change only
+  // to the target. Interactive rebase cannot do this — `rebase --continue`
+  // always rewrites the committer identity to the current Git user and the
+  // committer date to "now" for re-applied commits.
+  let previousNew: string | undefined = plan.root ? undefined : plan.baseCommit
+  let newTargetSha = ""
 
-    const rebaseArgs = plan.root ? ["rebase", "-i", "--root"] : ["rebase", "-i", plan.baseCommit!]
-    const rebaseStart = await runGit({ repoPath, args: rebaseArgs, env: { GIT_SEQUENCE_EDITOR: editorPath }, timeoutMs: 120_000 })
-    commands.push(rebaseStart)
-    if (rebaseStart.exitCode !== 0 && !(await isRebaseInProgress(repoPath))) throw new GitCommandError("Interactive rebase failed to start", rebaseStart)
+  for (const commit of plan.rangeCommits) {
+    const isTarget = commit.sha === plan.target.sha
+    const treeResult = await runGitChecked({ repoPath, args: ["rev-parse", `${commit.sha}^{tree}`] })
+    commands.push(treeResult)
+    const tree = treeResult.stdout.trim()
 
-    const amend = await runGit({ repoPath, args: amendArgs(plan), env: amendEnv(plan), timeoutMs: 120_000 })
-    commands.push(amend)
-    if (amend.exitCode !== 0) throw new GitCommandError("Commit amend failed during author change flow", amend)
-    const newTargetSha = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
+    const messageResult = await runGitChecked({ repoPath, args: ["log", "-1", "--format=%B", commit.sha] })
+    commands.push(messageResult)
+    // `git log --format=%B` adds a trailing newline that `commit-tree` will
+    // normalize into the canonical "single trailing newline" form on its own.
+    const message = messageResult.stdout
 
-    const cont = await runGit({ repoPath, args: ["rebase", "--continue"], env: { GIT_EDITOR: ":" }, timeoutMs: 120_000 })
-    commands.push(cont)
-    if (cont.exitCode !== 0 && (await hasConflicts(repoPath))) throw new GitCommandError("Rebase stopped with conflicts", cont)
-    if (cont.exitCode !== 0 && (await isRebaseInProgress(repoPath))) throw new GitCommandError("Rebase continue failed", cont)
+    const env = buildCommitEnv(commit, plan, isTarget)
+    const args = ["commit-tree", tree]
+    if (previousNew) args.push("-p", previousNew)
 
-    return { commands, newTargetSha }
-  } finally {
-    await rm(helperDir, { recursive: true, force: true })
+    const built = await runGitChecked({ repoPath, args, env, stdin: message })
+    commands.push(built)
+    const newSha = built.stdout.trim()
+    if (isTarget) newTargetSha = newSha
+    previousNew = newSha
   }
+
+  if (!previousNew) throw new Error("Author rewrite produced no commits")
+
+  const refResult = await runGitChecked({ repoPath, args: ["rev-parse", "--symbolic-full-name", "HEAD"] })
+  commands.push(refResult)
+  const headRef = refResult.stdout.trim()
+  const oldHead = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
+
+  if (headRef && headRef !== "HEAD") {
+    const update = await runGitChecked({ repoPath, args: ["update-ref", "-m", "gitsurgeon: change-commit-author", headRef, previousNew, oldHead] })
+    commands.push(update)
+  } else {
+    const update = await runGitChecked({ repoPath, args: ["update-ref", "--no-deref", "-m", "gitsurgeon: change-commit-author", "HEAD", previousNew, oldHead] })
+    commands.push(update)
+  }
+
+  // Trees are identical across the rewrite, so this just refreshes the index
+  // and HEAD pointer without touching working-tree contents.
+  const reset = await runGit({ repoPath, args: ["reset", "--hard", "HEAD"], timeoutMs: 120_000 })
+  commands.push(reset)
+
+  return { commands, newTargetSha }
 }
 
-function amendArgs(plan: ChangeCommitAuthorPlan): string[] {
-  const args = ["commit", "--amend", "--no-edit"]
-  if (plan.mode === "author" || plan.mode === "both") args.push(`--author=${plan.newName} <${plan.newEmail}>`)
-  return args
-}
-
-function amendEnv(plan: ChangeCommitAuthorPlan): Record<string, string> {
+function buildCommitEnv(commit: CommitSummary, plan: ChangeCommitAuthorPlan, isTarget: boolean): Record<string, string> {
   const env: Record<string, string> = {
-    GIT_COMMITTER_NAME: plan.target.committerName,
-    GIT_COMMITTER_EMAIL: plan.target.committerEmail,
-    GIT_COMMITTER_DATE: plan.target.committerDate,
+    GIT_AUTHOR_NAME: commit.authorName,
+    GIT_AUTHOR_EMAIL: commit.authorEmail,
+    GIT_AUTHOR_DATE: commit.authorDate,
+    GIT_COMMITTER_NAME: commit.committerName,
+    GIT_COMMITTER_EMAIL: commit.committerEmail,
+    GIT_COMMITTER_DATE: commit.committerDate,
+  }
+  if (!isTarget) return env
+
+  if (plan.mode === "author" || plan.mode === "both") {
+    env.GIT_AUTHOR_NAME = plan.newName
+    env.GIT_AUTHOR_EMAIL = plan.newEmail
   }
   if (plan.mode === "committer" || plan.mode === "both") {
     env.GIT_COMMITTER_NAME = plan.newName
@@ -211,17 +240,6 @@ function amendEnv(plan: ChangeCommitAuthorPlan): Record<string, string> {
 
 async function verificationLog(repoPath: string): Promise<string> {
   return (await runGitChecked({ repoPath, args: ["log", "--format=%h %aI %an <%ae> %cn <%ce> %s", "-n", "20"] })).stdout
-}
-
-async function isRebaseInProgress(repoPath: string): Promise<boolean> {
-  const mergePath = (await runGitChecked({ repoPath, args: ["rev-parse", "--path-format=absolute", "--git-path", "rebase-merge"] })).stdout.trim()
-  const applyPath = (await runGitChecked({ repoPath, args: ["rev-parse", "--path-format=absolute", "--git-path", "rebase-apply"] })).stdout.trim()
-  return existsSync(mergePath) || existsSync(applyPath)
-}
-
-async function hasConflicts(repoPath: string): Promise<boolean> {
-  const result = await runGitChecked({ repoPath, args: ["diff", "--name-only", "--diff-filter=U"] })
-  return result.stdout.trim() !== ""
 }
 
 function validateAuthorChangeMode(mode: string): asserts mode is AuthorChangeMode {
@@ -241,6 +259,4 @@ function attributionWarnings(): string[] {
   return ["This operation rewrites attribution metadata. Changing authorship is permanent and visible to all future readers of this repository."]
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`
-}
+

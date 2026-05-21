@@ -414,10 +414,20 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
     }
   }
 
-  const selectRepo = (repoPath: string) => {
-    state = { ...state, screen: "dashboard", repoPath, repoQuery: "", repoQueryCursor: 0, selectedRepoIndex: 0, exitPrompt: false, exportReportPath: undefined, exportReportError: undefined }
+  const enterDashboard = (current: AppState, repoPath: string): AppState => {
     void rememberRecentRepo(repoPath).catch(() => {})
-    void render()
+    return {
+      ...current,
+      screen: "dashboard",
+      repoPath,
+      repoQuery: "",
+      repoQueryCursor: 0,
+      selectedRepoIndex: 0,
+      exitPrompt: false,
+      error: undefined,
+      exportReportPath: undefined,
+      exportReportError: undefined,
+    }
   }
 
   const handleCurrentScreenKey = (key: KeyEvent) => {
@@ -440,7 +450,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     if (state.screen === "repo-picker") {
-      const nextState = handleRepoPickerKey(state, key, pickerPaths, selectRepo, renderer.destroy.bind(renderer))
+      const nextState = handleRepoPickerKey(state, key, pickerPaths, enterDashboard, renderer.destroy.bind(renderer))
       if (nextState !== state) { state = nextState; void render() }
       return
     }
@@ -1131,11 +1141,11 @@ function normalizeSearchText(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "")
 }
 
-function handleRepoPickerKey(state: AppState, key: KeyEvent, paths: string[], selectRepo: (repoPath: string) => void, exit: () => void): AppState {
+function handleRepoPickerKey(state: AppState, key: KeyEvent, paths: string[], enterDashboard: (current: AppState, repoPath: string) => AppState, exit: () => void): AppState {
   const filtered = filteredRepoPaths(paths, state.repoQuery)
   if (key.name === "return") {
     const selected = filtered[clamp(state.selectedRepoIndex, 0, Math.max(0, filtered.length - 1))]
-    if (selected) selectRepo(selected)
+    if (selected) return enterDashboard(state, selected)
     return state
   }
   if (key.name === "escape") {

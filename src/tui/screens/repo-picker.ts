@@ -1,4 +1,5 @@
 import { Box, Text, type SelectOption } from "@opentui/core"
+import { basename, dirname } from "node:path"
 import { KeyHelp } from "../components/key-help"
 import { AppFrame, theme } from "../layout"
 
@@ -18,14 +19,14 @@ export function RepoPickerScreen(paths: string[], query: string, queryCursor: nu
 
   return AppFrame(
     "Select Repository",
-    Text({ content: "Search repositories by path or folder name. Pass --repo <path> to skip this screen.", fg: theme.muted }),
+    Text({ content: "Search by folder name. Fuzzy matches are recommended first. Pass --repo <path> to skip this screen.", fg: theme.muted }),
     Text({ content: `Search: ${query ? editableText(query, queryCursor) : "|(type to filter)"}`, fg: theme.accent }),
     Box(
       { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
       ...(visible.length > 0
         ? visible.map((option, index) => {
           const absoluteIndex = start + index
-          return Text({ content: `${absoluteIndex === selectedIndex ? ">" : " "} ${option.name}`, fg: absoluteIndex === selectedIndex ? theme.accent : theme.text })
+          return Text({ content: `${absoluteIndex === selectedIndex ? ">" : " "} ${formatRepoOption(option.value)}`, fg: absoluteIndex === selectedIndex ? theme.accent : theme.text })
         })
         : [Text({ content: "No repositories match the current search", fg: theme.muted })]),
     ),
@@ -39,6 +40,10 @@ export function RepoPickerScreen(paths: string[], query: string, queryCursor: nu
     ]),
     Text({ content: error ?? "", fg: theme.danger }),
   )
+}
+
+function formatRepoOption(path: string): string {
+  return `${basename(path)}  ${dirname(path)}`
 }
 
 function editableText(value: string, cursor: number): string {

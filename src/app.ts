@@ -1,6 +1,8 @@
 import { createCliRenderer, type KeyEvent } from "@opentui/core"
-import { readdir, stat } from "node:fs/promises"
-import { join } from "node:path"
+import type { Dirent } from "node:fs"
+import { readdir } from "node:fs/promises"
+import { homedir } from "node:os"
+import { basename, join } from "node:path"
 import { loadGitSurgeonConfig, rememberRecentRepo } from "./config"
 import { changeCommitAuthor, validateAuthorInput } from "./git/author"
 import { getConflictReport, rebaseAbort, rebaseContinue, rebaseSkip } from "./git/conflict"
@@ -46,7 +48,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   const renderer = await createCliRenderer({ exitOnCtrlC: true })
   const config = await loadGitSurgeonConfig()
   let state: AppState = createInitialState(options.repoPath)
-  const discoveredRepos = await discoverRepoFolders(process.cwd())
+  const discoveredRepos = await discoverRepoFolders(homedir())
   const pickerPaths = uniquePaths([options.repoPath, process.cwd(), ...discoveredRepos, ...(options.recentRepos ?? []), ...config.recentRepos])
   if (options.repoPath) void rememberRecentRepo(options.repoPath).catch(() => {})
 
@@ -1048,27 +1050,85 @@ function uniquePaths(paths: (string | undefined)[]): string[] {
 }
 
 async function discoverRepoFolders(rootPath: string): Promise<string[]> {
-  try {
-    const entries = await readdir(rootPath, { withFileTypes: true })
-    const candidates = entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => join(rootPath, entry.name))
-    const checks = await Promise.all(candidates.map(async (path) => {
-      try {
-        const gitDir = await stat(join(path, ".git"))
-        return gitDir.isDirectory() || gitDir.isFile() ? path : undefined
-      } catch {
-        return undefined
-      }
-    }))
-    return checks.filter((path): path is string => Boolean(path))
-  } catch {
-    return []
+  const repos: string[] = []
+  const queue: Array<{ path: string; depth: number }> = [{ path: rootPath, depth: 0 }]
+  const maxDepth = 6
+  const maxRepos = 500
+
+  while (queue.length > 0 && repos.length < maxRepos) {
+    const current = queue.shift()!
+    let entries: Dirent[]
+    try {
+      entries = await readdir(current.path, { withFileTypes: true })
+    } catch {
+      continue
+    }
+
+    if (entries.some((entry) => entry.name === ".git" && (entry.isDirectory() || entry.isFile()))) {
+      repos.push(current.path)
+      continue
+    }
+
+    if (current.depth >= maxDepth) continue
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || shouldSkipRepoSearchDir(entry.name)) continue
+      queue.push({ path: join(current.path, entry.name), depth: current.depth + 1 })
+    }
   }
+
+  return repos
+}
+
+function shouldSkipRepoSearchDir(name: string): boolean {
+  return name.startsWith(".") || ["node_modules", "vendor", "dist", "build", "target", "Library"].includes(name)
 }
 
 function filteredRepoPaths(paths: string[], query: string): string[] {
-  const normalized = query.trim().toLowerCase()
+  const normalized = normalizeSearchText(query)
   if (!normalized) return paths
-  return paths.filter((path) => path.toLowerCase().includes(normalized))
+
+  return paths
+    .map((path, index) => ({ path, index, score: scoreRepoPath(path, normalized) }))
+    .filter((result) => result.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((result) => result.path)
+}
+
+function scoreRepoPath(path: string, query: string): number {
+  const folder = normalizeSearchText(basename(path))
+  const fullPath = normalizeSearchText(path)
+  const folderScore = scoreSearchCandidate(folder, query)
+  const pathScore = scoreSearchCandidate(fullPath, query)
+  return Math.max(folderScore * 3, pathScore)
+}
+
+function scoreSearchCandidate(candidate: string, query: string): number {
+  if (!candidate || !query) return 0
+  if (candidate === query) return 1000
+  if (candidate.startsWith(query)) return 850 - candidate.length
+  const substringIndex = candidate.indexOf(query)
+  if (substringIndex >= 0) return 700 - substringIndex - candidate.length / 100
+
+  let queryIndex = 0
+  let score = 0
+  let streak = 0
+  for (let candidateIndex = 0; candidateIndex < candidate.length && queryIndex < query.length; candidateIndex++) {
+    if (candidate[candidateIndex] !== query[queryIndex]) {
+      streak = 0
+      continue
+    }
+    streak += 1
+    score += 10 + streak * 5
+    queryIndex += 1
+  }
+
+  if (queryIndex < query.length) return 0
+  return score - candidate.length / 50
+}
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "")
 }
 
 function handleRepoPickerKey(state: AppState, key: KeyEvent, paths: string[], selectRepo: (repoPath: string) => void, exit: () => void): AppState {

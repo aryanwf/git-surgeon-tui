@@ -1,5 +1,5 @@
 import type { CommitSummary } from "../git/log"
-import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, VisualRebaseState } from "./types"
+import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState } from "./types"
 
 export function createInitialState(repoPath?: string): AppState {
   return {
@@ -70,6 +70,24 @@ export function startDateFlow(state: AppState, commit: CommitSummary): AppState 
     newDate: commit.authorDate,
   }
   return { ...state, screen: "rewrite-date", rewriteFlow: flow }
+}
+
+export function startSplitFlow(state: AppState, commit: CommitSummary): AppState {
+  const flow: SplitCommitState = {
+    type: "split",
+    step: "form",
+    selectedSha: commit.sha,
+    selectedSubject: commit.subject,
+    pathAssignments: {},
+    parts: [
+      { message: `${commit.subject} (part 1)` },
+      { message: `${commit.subject} (part 2)` },
+    ],
+    selectedPathIndex: 0,
+    selectedPartIndex: 0,
+    activeField: "paths",
+  }
+  return { ...state, screen: "rewrite-split", rewriteFlow: flow }
 }
 
 export function startVisualRebaseFlow(state: AppState, baseCommit: CommitSummary): AppState {

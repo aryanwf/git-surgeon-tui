@@ -3,6 +3,7 @@ import type { RepositoryState } from "../git/repository"
 import type { ChangeCommitAuthorPreview } from "../git/author"
 import type { ChangeCommitDatePreview } from "../git/date"
 import type { DropCommitPreview } from "../git/drop"
+import type { SplitCommitPreview } from "../git/split"
 import type { VisualRebaseAction, VisualRebasePreview } from "../git/rebase"
 import type { RenamePreview } from "../git/reword"
 
@@ -17,6 +18,7 @@ export type AppScreen =
   | "rewrite-drop"
   | "rewrite-author"
   | "rewrite-date"
+  | "rewrite-split"
   | "rewrite-visual-rebase"
   | "conflict"
 
@@ -105,6 +107,27 @@ export type VisualRebaseTodoRow = {
   command?: string
 }
 
+export type SplitCommitPartDraft = {
+  message: string
+}
+
+export type SplitCommitState = {
+  type: "split"
+  step: RewriteStep
+  selectedSha: string
+  selectedSubject: string
+  changedPaths?: string[]
+  pathAssignments: Record<string, number>
+  parts: SplitCommitPartDraft[]
+  selectedPathIndex: number
+  selectedPartIndex: number
+  activeField: "paths" | "message"
+  preview?: SplitCommitPreview
+  backupRef?: string
+  operationLogPath?: string
+  error?: string
+}
+
 export type VisualRebaseState = {
   type: "visual-rebase"
   step: RewriteStep
@@ -124,6 +147,7 @@ export type RewriteFlowState =
   | RewriteDropState
   | RewriteAuthorState
   | RewriteDateState
+  | SplitCommitState
   | VisualRebaseState
 
 export type AppState = {

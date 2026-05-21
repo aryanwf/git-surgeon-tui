@@ -1,10 +1,10 @@
 import { Box, Text } from "@opentui/core"
 import type { RepositoryState } from "../../git/repository"
-import type { RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, VisualRebaseState, VisualRebaseTodoRow } from "../../state/types"
+import type { RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, SplitCommitState, VisualRebaseState, VisualRebaseTodoRow } from "../../state/types"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
-// ─── Reword ──────────────────────────────────────────────────────────────────
+// Reword
 
 export function RewordFlowScreen(state: RepositoryState, flow: RewriteRewordState) {
   if (flow.step === "form") return RewordFormScreen(state, flow)
@@ -75,7 +75,7 @@ function RewordResultScreen(state: RepositoryState, flow: RewriteRewordState) {
   )
 }
 
-// ─── Drop Commit ─────────────────────────────────────────────────────────────
+// Drop Commit
 
 export function DropCommitFlowScreen(state: RepositoryState, flow: RewriteDropState) {
   if (flow.step === "confirm") return DropConfirmScreen(state, flow)
@@ -154,7 +154,9 @@ function DropResultScreen(state: RepositoryState, flow: RewriteDropState) {
   )
 }
 
-// ─── Change Author ───────────────────────────────────────────────────────────
+
+
+// Change Author
 
 export function ChangeAuthorFlowScreen(state: RepositoryState, flow: RewriteAuthorState) {
   if (flow.step === "form") return AuthorFormScreen(state, flow)
@@ -263,7 +265,9 @@ function AuthorResultScreen(state: RepositoryState, flow: RewriteAuthorState) {
   )
 }
 
-// ─── Change Date ─────────────────────────────────────────────────────────────
+
+
+// Change Date
 
 export function ChangeDateFlowScreen(state: RepositoryState, flow: RewriteDateState) {
   if (flow.step === "form") return DateFormScreen(state, flow)
@@ -346,7 +350,101 @@ function DateResultScreen(state: RepositoryState, flow: RewriteDateState) {
   )
 }
 
-// ─── Visual Interactive Rebase ───────────────────────────────────────────────
+
+
+// Split Commit
+
+export function SplitCommitFlowScreen(state: RepositoryState, flow: SplitCommitState) {
+  if (flow.step === "form") return SplitCommitFormScreen(state, flow)
+  if (flow.step === "preview") return SplitCommitPreviewScreen(state, flow)
+  if (flow.step === "applying") return ApplyingScreen(state, "Splitting commit...")
+  return SplitCommitResultScreen(state, flow)
+}
+
+function SplitCommitFormScreen(state: RepositoryState, flow: SplitCommitState) {
+  const paths = flow.changedPaths ?? []
+  const selectedPath = paths[flow.selectedPathIndex]
+  const selectedPart = flow.parts[flow.selectedPartIndex]
+  return AppFrame(
+    "Split Commit",
+    Box(
+      { flexDirection: "column", gap: 1, flexGrow: 1 },
+      commitInfoBox(flow.selectedSha, flow.selectedSubject),
+      Box(
+        { flexDirection: "row", gap: 1, flexGrow: 1 },
+        Box(
+          { flexDirection: "column", width: "56%", borderStyle: "single", borderColor: flow.activeField === "paths" ? theme.accent : theme.border, padding: 1 },
+          Text({ content: "Changed files", fg: theme.accent }),
+          ...(flow.changedPaths ? splitPathLines(paths, flow) : [Text({ content: "Loading changed paths...", fg: theme.muted })]),
+        ),
+        Box(
+          { flexDirection: "column", flexGrow: 1, borderStyle: "single", borderColor: flow.activeField === "message" ? theme.accent : theme.border, padding: 1 },
+          Text({ content: `Part ${flow.selectedPartIndex + 1} message`, fg: theme.accent }),
+          Text({ content: `${selectedPart?.message ?? ""}${flow.activeField === "message" ? "|" : ""}`, fg: theme.text }),
+          Text({ content: "", fg: theme.muted }),
+          ...splitPartSummary(paths, flow),
+          ...(selectedPath ? [Text({ content: `Selected file goes to part ${(flow.pathAssignments[selectedPath] ?? 0) + 1}`, fg: theme.muted })] : []),
+        ),
+      ),
+      ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
+    ),
+    Text({ content: "j/k: file  left/right: assign part  tab: edit message  [/]: part  n: add part  x: remove part  enter: preview", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+function SplitCommitPreviewScreen(state: RepositoryState, flow: SplitCommitState) {
+  const p = flow.preview
+  return AppFrame(
+    "Split Commit — Preview",
+    Box(
+      { flexDirection: "column", gap: 1, flexGrow: 1 },
+      Box(
+        { flexDirection: "row", gap: 1 },
+        previewPanel("Before", p?.oldGraph ?? "(computing...)", theme.danger, 10),
+        previewPanel("After", p?.newGraph ?? "(computing...)", theme.ok, 10),
+      ),
+      Box(
+        { flexDirection: "row", gap: 1 },
+        previewPanel("Split commits", p?.splitCommitIds.join("\n") ?? "(computing...)", theme.text, 8),
+        previewPanel("Final diff stat", p?.finalDiffStat ?? "(computing...)", theme.text, 8),
+      ),
+      warningsBox(p?.warnings ?? []),
+    ),
+    Text({ content: "enter: apply to real repo  escape: cancel", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+function SplitCommitResultScreen(state: RepositoryState, flow: SplitCommitState) {
+  if (flow.error) {
+    return AppFrame(
+      "Split Commit — Failed",
+      Box(
+        { flexDirection: "column", gap: 1 },
+        Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
+        ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
+      ),
+      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      StatusBar(state),
+    )
+  }
+  return AppFrame(
+    "Split Commit — Applied",
+    Box(
+      { flexDirection: "column", gap: 1 },
+      Text({ content: "Commit split successfully.", fg: theme.ok }),
+      ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
+      ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
+    ),
+    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+
+
+// Visual Interactive Rebase
 
 export function VisualRebaseFlowScreen(state: RepositoryState, flow: VisualRebaseState) {
   if (flow.step === "form") return VisualRebaseFormScreen(state, flow)
@@ -436,7 +534,9 @@ function VisualRebaseResultScreen(state: RepositoryState, flow: VisualRebaseStat
   )
 }
 
-// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+
+// Shared helpers
 
 function ApplyingScreen(state: RepositoryState, message: string) {
   return AppFrame(
@@ -505,6 +605,24 @@ function selectedDetails(row: VisualRebaseTodoRow, activeField: "list" | "messag
     Text({ content: `Command: ${truncate(row.command ?? "", 72)}${activeField === "command" ? "|" : ""}`, fg: activeField === "command" ? theme.accent : theme.muted }),
     Text({ content: "Notes: squash/fixup cannot be first; merge commits are blocked in v1.", fg: theme.muted }),
   ]
+}
+
+function splitPathLines(paths: string[], flow: SplitCommitState) {
+  if (paths.length === 0) return [Text({ content: "Selected commit has no changed files", fg: theme.muted })]
+  return paths.slice(0, 16).map((path, index) => {
+    const selected = index === flow.selectedPathIndex
+    const part = flow.pathAssignments[path] ?? 0
+    return Text({ content: `${selected ? ">" : " "} part ${part + 1}  ${truncate(path, 62)}`, fg: selected ? theme.accent : theme.text })
+  })
+}
+
+function splitPartSummary(paths: string[], flow: SplitCommitState) {
+  return flow.parts.map((part, index) => {
+    const count = paths.filter((path) => (flow.pathAssignments[path] ?? 0) === index).length
+    const prefix = index === flow.selectedPartIndex ? ">" : " "
+    const label = part.message.trim() || "(empty message)"
+    return Text({ content: `${prefix} part ${index + 1}: ${count} file(s) - ${truncate(label, 44)}`, fg: index === flow.selectedPartIndex ? theme.accent : theme.muted })
+  })
 }
 
 function truncate(value: string, maxLength: number): string {

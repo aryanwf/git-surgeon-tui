@@ -36,6 +36,12 @@ export type SplitCommitPreview = {
   changedCommitCount: number
 }
 
+export type SplitCommitDetails = {
+  target: CommitSummary
+  changedPaths: string[]
+  descendants: CommitSummary[]
+}
+
 export type SplitCommitResult = {
   preview: SplitCommitPreview
   applied: boolean
@@ -86,21 +92,19 @@ export async function splitSingleCommit(options: { repoPath: string; sha: string
   }
 }
 
+export async function getSplitCommitDetails(repoPath: string, sha: string): Promise<SplitCommitDetails> {
+  const details = await resolveSplitCommitTarget(repoPath, sha)
+  return {
+    target: details.target,
+    changedPaths: details.changedPaths,
+    descendants: details.rangeCommits.slice(1),
+  }
+}
+
 export async function buildSplitCommitPlan(repoPath: string, sha: string, parts: SplitCommitPart[]): Promise<SplitCommitPlan> {
   if (parts.length < 2) throw new Error("Split requires at least two commit parts")
 
-  const commits = await getHeadCommits(repoPath)
-  const bySha = new Map(commits.flatMap((commit) => [[commit.sha, commit], [commit.shortSha, commit]] as const))
-  const target = bySha.get(sha)
-  if (!target) throw new Error(`Commit ${sha} is not reachable from HEAD`)
-  if (target.parents.length > 1) throw new Error(`Merge commit ${target.shortSha} cannot be split in v1`)
-
-  const targetIndex = commits.findIndex((commit) => commit.sha === target.sha)
-  const rangeCommits = commits.slice(targetIndex)
-  const mergeInRange = rangeCommits.find((commit) => commit.parents.length > 1)
-  if (mergeInRange) throw new Error(`Selected range contains merge commit ${mergeInRange.shortSha}; --rebase-merges is not enabled in v1`)
-
-  const changedPaths = await listChangedPaths(repoPath, target.sha)
+  const { target, rangeCommits, changedPaths } = await resolveSplitCommitTarget(repoPath, sha)
   validateParts(parts, changedPaths)
 
   const root = target.parents.length === 0
@@ -117,6 +121,21 @@ export async function buildSplitCommitPlan(repoPath: string, sha: string, parts:
     todo,
     changedCommitCount: rangeCommits.length + parts.length - 1,
   }
+}
+
+async function resolveSplitCommitTarget(repoPath: string, sha: string): Promise<{ target: CommitSummary; rangeCommits: CommitSummary[]; changedPaths: string[] }> {
+  const commits = await getHeadCommits(repoPath)
+  const bySha = new Map(commits.flatMap((commit) => [[commit.sha, commit], [commit.shortSha, commit]] as const))
+  const target = bySha.get(sha)
+  if (!target) throw new Error(`Commit ${sha} is not reachable from HEAD`)
+  if (target.parents.length > 1) throw new Error(`Merge commit ${target.shortSha} cannot be split in v1`)
+
+  const targetIndex = commits.findIndex((commit) => commit.sha === target.sha)
+  const rangeCommits = commits.slice(targetIndex)
+  const mergeInRange = rangeCommits.find((commit) => commit.parents.length > 1)
+  if (mergeInRange) throw new Error(`Selected range contains merge commit ${mergeInRange.shortSha}; --rebase-merges is not enabled in v1`)
+
+  return { target, rangeCommits, changedPaths: await listChangedPaths(repoPath, target.sha) }
 }
 
 async function previewSplitCommit(repoPath: string, plan: SplitCommitPlan, warnings: string[]): Promise<SplitCommitPreview> {

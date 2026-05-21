@@ -21,7 +21,7 @@ export function HistoryScreen(state: RepositoryState, commits: CommitSummary[], 
         ...previewLines(diff, 24).map((line) => Text({ content: line, fg: lineColor(line) })),
       ),
     ),
-    Text({ content: "j/k: select  type: filter  w: reword  d: drop  a: author  t: date  i: visual rebase  b: dashboard", fg: theme.muted }),
+    Text({ content: "j/k: select  type: filter  w: reword  d: drop  s: split  a: author  t: date  i: rebase  b: dashboard", fg: theme.muted }),
     StatusBar(state),
   )
 }

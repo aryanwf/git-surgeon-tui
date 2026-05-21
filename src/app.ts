@@ -5,7 +5,7 @@ import { loadGitSurgeonConfig, rememberRecentRepo } from "./config"
 import { changeCommitAuthor, validateAuthorInput } from "./git/author"
 import { getConflictReport, rebaseAbort, rebaseContinue, rebaseSkip } from "./git/conflict"
 import { changeOldCommitDate } from "./git/date"
-import { dropSingleCommit } from "./git/drop"
+import { buildDropCommitPlan, dropSingleCommit } from "./git/drop"
 import { editCommitHistory, type HistoryEditOperation } from "./git/history-plan"
 import { getCommitDiff, listCommits, searchCommits } from "./git/log"
 import { buildHistoryPreview, withScratchClone } from "./git/preview"
@@ -134,6 +134,16 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           mount(RewordFlowScreen(repository, flow))
         } else if (state.screen === "rewrite-drop") {
           const flow = state.rewriteFlow as RewriteDropState
+          if (flow.step === "confirm" && !flow.descendants && !flow.planError) {
+            try {
+              const plan = await buildDropCommitPlan(repository.repoPath, flow.selectedSha)
+              state = { ...state, rewriteFlow: { ...flow, descendants: plan.descendants, changedCommitCount: plan.changedCommitCount, error: undefined } }
+            } catch (err) {
+              state = { ...state, rewriteFlow: { ...flow, planError: true, error: err instanceof Error ? err.message : String(err) } }
+            }
+            void render()
+            return
+          }
           if (flow.step === "preview" && !flow.preview) {
             try {
               const result = await dropSingleCommit({ repoPath: repository.repoPath, sha: flow.selectedSha })

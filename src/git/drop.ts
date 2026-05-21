@@ -160,7 +160,7 @@ async function executeDropCommitRewrite(repoPath: string, plan: DropCommitPlan):
     const rebaseArgs = plan.root ? ["rebase", "-i", "--root"] : ["rebase", "-i", plan.baseCommit!]
     const rebase = await runGit({ repoPath, args: rebaseArgs, env: { GIT_SEQUENCE_EDITOR: editorPath, GIT_EDITOR: ":" }, timeoutMs: 120_000 })
     commands.push(rebase)
-    if (rebase.exitCode !== 0 && (await hasConflicts(repoPath))) throw new GitCommandError("Rebase stopped with conflicts", rebase)
+    if (rebase.exitCode !== 0 && (await hasConflicts(repoPath))) throw new GitCommandError(await rebaseConflictMessage(repoPath), rebase)
     if (rebase.exitCode !== 0) throw new GitCommandError("Drop commit rebase failed", rebase)
 
     return { commands }
@@ -172,6 +172,17 @@ async function executeDropCommitRewrite(repoPath: string, plan: DropCommitPlan):
 async function hasConflicts(repoPath: string): Promise<boolean> {
   const result = await runGitChecked({ repoPath, args: ["diff", "--name-only", "--diff-filter=U"] })
   return result.stdout.trim() !== "" || (await isRebaseInProgress(repoPath))
+}
+
+async function rebaseConflictMessage(repoPath: string): Promise<string> {
+  const current = await runGit({ repoPath, args: ["show", "-s", "--format=%h %s", "REBASE_HEAD"] })
+  const files = await runGit({ repoPath, args: ["diff", "--name-only", "--diff-filter=U"] })
+  const details = [
+    current.exitCode === 0 && current.stdout.trim() ? `while applying ${current.stdout.trim()}` : undefined,
+    files.exitCode === 0 && files.stdout.trim() ? `conflicted files: ${files.stdout.trim().split("\n").join(", ")}` : undefined,
+  ].filter(Boolean)
+
+  return details.length > 0 ? `Rebase stopped with conflicts (${details.join("; ")})` : "Rebase stopped with conflicts"
 }
 
 async function isRebaseInProgress(repoPath: string): Promise<boolean> {

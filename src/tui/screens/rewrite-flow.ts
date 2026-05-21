@@ -88,7 +88,7 @@ export function DropCommitFlowScreen(state: RepositoryState, flow: RewriteDropSt
 
 function DropConfirmScreen(state: RepositoryState, flow: RewriteDropState) {
   const p = flow.preview
-  const descendants = p?.descendants ?? []
+  const descendants = p?.descendants ?? flow.descendants
   return AppFrame(
     "Drop Commit",
     Box(
@@ -98,7 +98,9 @@ function DropConfirmScreen(state: RepositoryState, flow: RewriteDropState) {
         Text({ content: "Commit to be dropped:", fg: theme.danger }),
         Text({ content: `  ${flow.selectedSha.slice(0, 10)}  ${flow.selectedSubject}`, fg: theme.text }),
       ),
-      descendants.length > 0
+      descendants === undefined
+        ? Text({ content: "Checking descendant commits...", fg: theme.muted })
+        : descendants.length > 0
         ? Box(
             { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
             Text({ content: `${descendants.length} descendant commit(s) will be rewritten:`, fg: theme.accent }),

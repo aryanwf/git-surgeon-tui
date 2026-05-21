@@ -60,6 +60,9 @@ export type RewriteDropState = {
   step: DropStep
   selectedSha: string
   selectedSubject: string
+  descendants?: CommitSummary[]
+  changedCommitCount?: number
+  planError?: boolean
   // populated after scratch run
   preview?: DropCommitPreview
   backupRef?: string

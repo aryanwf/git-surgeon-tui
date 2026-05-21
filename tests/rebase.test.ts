@@ -20,6 +20,13 @@ test("previews a visual rebase in a scratch clone", async () => {
   expect(result.preview.oldHead).toBe(oldHead)
   expect(result.preview.newHead).not.toBe(oldHead)
   expect(result.preview.todo).toContain(`reword ${commits[1]}`)
+  expect(result.preview.oldGraph).toContain("second commit")
+  expect(result.preview.newGraph).toContain("renamed second")
+  expect(result.preview.oldMetadata).toContain("second commit")
+  expect(result.preview.newMetadata).toContain("renamed second")
+  expect(result.preview.finalDiffStat).toBe("")
+  expect(result.preview.finalDiffPatch).toBe("")
+  expect(result.preview.historyPreview.newHead).toBe(result.preview.newHead)
   expect(await commitSubjects(repoPath)).toEqual(["first commit", "second commit", "third commit"])
 })
 

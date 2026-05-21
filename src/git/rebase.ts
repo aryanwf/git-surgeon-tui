@@ -6,6 +6,7 @@ import { listCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
 import { GitCommandError, runGit, runGitChecked, type GitCommandResult } from "./runner"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog } from "./safety"
+import { buildHistoryPreview, type HistoryPreview } from "./preview"
 
 export type VisualRebaseAction = "pick" | "reword" | "edit" | "squash" | "fixup" | "drop" | "exec"
 
@@ -27,6 +28,11 @@ export type VisualRebasePreview = {
   oldGraph: string
   newGraph: string
   finalDiff: string
+  finalDiffStat: string
+  finalDiffPatch: string
+  oldMetadata: string
+  newMetadata: string
+  historyPreview: HistoryPreview
   warnings: string[]
   changedCommitCount: number
   droppedCommitIds: string[]
@@ -137,21 +143,22 @@ async function previewVisualRebase(repoPath: string, plan: VisualRebasePlan, war
   const scratch = join(tmp, "repo")
   try {
     await runGitChecked({ args: ["clone", "--shared", "--no-hardlinks", repoPath, scratch] })
-    const oldHead = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
-    const oldGraph = await graph(repoPath, plan)
     await executeVisualRebase(scratch, plan)
-    const newHead = (await runGitChecked({ repoPath: scratch, args: ["rev-parse", "HEAD"] })).stdout.trim()
-    const newGraph = await graph(scratch, plan)
-    const finalDiff = (await runGitChecked({ repoPath: scratch, args: ["diff", "--stat", oldHead, newHead] })).stdout
+    const historyPreview = await buildHistoryPreview({ repoPath, scratchPath: scratch, range: `${plan.baseCommit}..HEAD` })
     return {
-      oldHead,
-      newHead,
+      oldHead: historyPreview.oldHead,
+      newHead: historyPreview.newHead,
       baseCommit: plan.baseCommit,
       commits: plan.commits,
       todo: plan.todo,
-      oldGraph,
-      newGraph,
-      finalDiff,
+      oldGraph: historyPreview.oldGraph,
+      newGraph: historyPreview.newGraph,
+      finalDiff: historyPreview.diffStat,
+      finalDiffStat: historyPreview.diffStat,
+      finalDiffPatch: historyPreview.diffPatch,
+      oldMetadata: historyPreview.oldMetadata,
+      newMetadata: historyPreview.newMetadata,
+      historyPreview,
       warnings,
       changedCommitCount: plan.changedCommitCount,
       droppedCommitIds: plan.droppedCommitIds,
@@ -228,10 +235,6 @@ function validateRows(commits: CommitSummary[], rows: PlannedRow[]): void {
 function todoLine(row: PlannedRow): string {
   if (row.action === "exec") return `pick ${row.sha} ${row.commit.subject}\nexec ${row.command}`
   return `${row.action} ${row.sha} ${row.commit.subject}`
-}
-
-async function graph(repoPath: string, plan: VisualRebasePlan): Promise<string> {
-  return (await runGitChecked({ repoPath, args: ["log", "--graph", "--decorate", "--oneline", "--date=short", `${plan.baseCommit}..HEAD`] })).stdout
 }
 
 async function isRebaseInProgress(repoPath: string): Promise<boolean> {

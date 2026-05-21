@@ -14,6 +14,12 @@ test("previews dropping a commit in a scratch clone", async () => {
   expect(result.preview.newHead).not.toBe(oldHead)
   expect(result.preview.droppedCommitIds).toEqual([commits[1]])
   expect(result.preview.descendants.map((commit) => commit.subject)).toEqual(["third commit"])
+  expect(result.preview.oldGraph).toContain("second commit")
+  expect(result.preview.newGraph).not.toContain("second commit")
+  expect(result.preview.finalDiffStat).toContain("two.txt")
+  expect(result.preview.finalDiffPatch).toContain("deleted file mode")
+  expect(result.preview.oldMetadata).toContain("second commit")
+  expect(result.preview.newMetadata).not.toContain("second commit")
   expect(await commitSubjects(repoPath)).toEqual(["first commit", "second commit", "third commit"])
 })
 

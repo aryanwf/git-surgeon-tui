@@ -6,6 +6,7 @@ import { runGit, runGitChecked, GitCommandError, type GitCommandResult } from ".
 import { getHeadCommits } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog, type OperationLog } from "./safety"
+import { buildHistoryPreview, historyRange, type HistoryPreview } from "./preview"
 
 export type RenameCommitMessage = {
   sha: string
@@ -21,6 +22,11 @@ export type RenamePreview = {
   oldGraph: string
   newGraph: string
   finalDiff: string
+  finalDiffStat: string
+  finalDiffPatch: string
+  oldMetadata: string
+  newMetadata: string
+  historyPreview: HistoryPreview
   warnings: string[]
   changedCommitCount: number
   oldToNew: Record<string, string>
@@ -123,19 +129,20 @@ async function previewRename(repoPath: string, plan: RewritePlan, warnings: stri
   const scratch = join(tmp, "repo")
   try {
     await runGitChecked({ args: ["clone", "--shared", "--no-hardlinks", repoPath, scratch] })
-    const oldHead = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
-    const oldGraph = await graph(repoPath, plan)
     const rewrite = await executeRenameRewrite(scratch, plan)
-    const newHead = (await runGitChecked({ repoPath: scratch, args: ["rev-parse", "HEAD"] })).stdout.trim()
-    const newGraph = await graph(scratch, plan)
-    const finalDiff = (await runGitChecked({ repoPath: scratch, args: ["diff", "--stat", oldHead, newHead] })).stdout
+    const historyPreview = await buildHistoryPreview({ repoPath, scratchPath: scratch, range: historyRange(plan.baseCommit, plan.root) })
     return {
-      oldHead,
-      newHead,
+      oldHead: historyPreview.oldHead,
+      newHead: historyPreview.newHead,
       baseCommit: plan.baseCommit,
-      oldGraph,
-      newGraph,
-      finalDiff,
+      oldGraph: historyPreview.oldGraph,
+      newGraph: historyPreview.newGraph,
+      finalDiff: historyPreview.diffStat,
+      finalDiffStat: historyPreview.diffStat,
+      finalDiffPatch: historyPreview.diffPatch,
+      oldMetadata: historyPreview.oldMetadata,
+      newMetadata: historyPreview.newMetadata,
+      historyPreview,
       warnings,
       changedCommitCount: plan.changedCommitCount,
       oldToNew: buildOldToNewMap(plan, rewrite.rewrittenCommits),
@@ -194,11 +201,6 @@ async function executeRenameRewrite(repoPath: string, plan: RewritePlan): Promis
   } finally {
     await rm(helperDir, { recursive: true, force: true })
   }
-}
-
-async function graph(repoPath: string, plan: RewritePlan): Promise<string> {
-  const range = plan.root ? "HEAD" : `${plan.baseCommit}..HEAD`
-  return (await runGitChecked({ repoPath, args: ["log", "--graph", "--decorate", "--oneline", "--date=short", range] })).stdout
 }
 
 async function isRebaseInProgress(repoPath: string): Promise<boolean> {

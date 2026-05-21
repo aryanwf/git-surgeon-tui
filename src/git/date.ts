@@ -6,6 +6,7 @@ import { getHeadCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
 import { GitCommandError, runGit, runGitChecked, type GitCommandResult } from "./runner"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog } from "./safety"
+import { buildHistoryPreview, historyRange, type HistoryPreview } from "./preview"
 
 export type DateChangeMode = "author" | "committer" | "both"
 
@@ -22,6 +23,11 @@ export type ChangeCommitDatePreview = {
   oldGraph: string
   newGraph: string
   finalDiff: string
+  finalDiffStat: string
+  finalDiffPatch: string
+  oldMetadata: string
+  newMetadata: string
+  historyPreview: HistoryPreview
   warnings: string[]
   changedCommitCount: number
   oldToNew: Record<string, string>
@@ -116,26 +122,27 @@ async function previewChangeCommitDate(repoPath: string, plan: ChangeCommitDateP
   const scratch = join(tmp, "repo")
   try {
     await runGitChecked({ args: ["clone", "--shared", "--no-hardlinks", repoPath, scratch] })
-    const oldHead = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
     const oldLog = await verificationLog(repoPath)
-    const oldGraph = await graph(repoPath, plan)
     const rewrite = await executeChangeCommitDateRewrite(scratch, plan)
-    const newHead = (await runGitChecked({ repoPath: scratch, args: ["rev-parse", "HEAD"] })).stdout.trim()
     const newLog = await verificationLog(scratch)
-    const newGraph = await graph(scratch, plan)
-    const finalDiff = (await runGitChecked({ repoPath: scratch, args: ["diff", "--stat", oldHead, newHead] })).stdout
+    const historyPreview = await buildHistoryPreview({ repoPath, scratchPath: scratch, range: historyRange(plan.baseCommit, plan.root) })
     return {
-      oldHead,
-      newHead,
+      oldHead: historyPreview.oldHead,
+      newHead: historyPreview.newHead,
       baseCommit: plan.baseCommit,
       targetCommit: plan.target,
       newDate: plan.newDate,
       mode: plan.mode,
       oldLog,
       newLog,
-      oldGraph,
-      newGraph,
-      finalDiff,
+      oldGraph: historyPreview.oldGraph,
+      newGraph: historyPreview.newGraph,
+      finalDiff: historyPreview.diffStat,
+      finalDiffStat: historyPreview.diffStat,
+      finalDiffPatch: historyPreview.diffPatch,
+      oldMetadata: historyPreview.oldMetadata,
+      newMetadata: historyPreview.newMetadata,
+      historyPreview,
       warnings,
       changedCommitCount: plan.changedCommitCount,
       oldToNew: { [plan.target.sha]: rewrite.newTargetSha },
@@ -192,11 +199,6 @@ function amendEnv(plan: ChangeCommitDatePlan): Record<string, string> {
   }
   if (plan.mode === "committer" || plan.mode === "both") env.GIT_COMMITTER_DATE = plan.newDate
   return env
-}
-
-async function graph(repoPath: string, plan: ChangeCommitDatePlan): Promise<string> {
-  const range = plan.root ? "HEAD" : `${plan.baseCommit}..HEAD`
-  return (await runGitChecked({ repoPath, args: ["log", "--graph", "--decorate", "--oneline", "--date=short", range] })).stdout
 }
 
 async function verificationLog(repoPath: string): Promise<string> {

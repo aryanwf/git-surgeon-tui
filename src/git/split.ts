@@ -6,6 +6,7 @@ import { getHeadCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
 import { GitCommandError, runGit, runGitChecked, type GitCommandResult } from "./runner"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog } from "./safety"
+import { buildHistoryPreview, historyRange, type HistoryPreview } from "./preview"
 
 export type SplitCommitPart = {
   message: string
@@ -26,6 +27,11 @@ export type SplitCommitPreview = {
   oldGraph: string
   newGraph: string
   finalDiff: string
+  finalDiffStat: string
+  finalDiffPatch: string
+  oldMetadata: string
+  newMetadata: string
+  historyPreview: HistoryPreview
   warnings: string[]
   changedCommitCount: number
 }
@@ -118,25 +124,26 @@ async function previewSplitCommit(repoPath: string, plan: SplitCommitPlan, warni
   const scratch = join(tmp, "repo")
   try {
     await runGitChecked({ args: ["clone", "--shared", "--no-hardlinks", repoPath, scratch] })
-    const oldHead = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
-    const oldGraph = await graph(repoPath, plan)
     const targetDiff = (await runGitChecked({ repoPath, args: ["show", "--stat", "--patch", "--format=fuller", plan.target.sha] })).stdout
     const rewrite = await executeSplitCommitRewrite(scratch, plan)
-    const newHead = (await runGitChecked({ repoPath: scratch, args: ["rev-parse", "HEAD"] })).stdout.trim()
-    const newGraph = await graph(scratch, plan)
-    const finalDiff = (await runGitChecked({ repoPath: scratch, args: ["diff", "--stat", oldHead, newHead] })).stdout
+    const historyPreview = await buildHistoryPreview({ repoPath, scratchPath: scratch, range: historyRange(plan.baseCommit, plan.root) })
     return {
-      oldHead,
-      newHead,
+      oldHead: historyPreview.oldHead,
+      newHead: historyPreview.newHead,
       baseCommit: plan.baseCommit,
       targetCommit: plan.target,
       changedPaths: plan.changedPaths,
       splitCommitIds: rewrite.splitCommitIds,
       descendants: plan.descendants,
       targetDiff,
-      oldGraph,
-      newGraph,
-      finalDiff,
+      oldGraph: historyPreview.oldGraph,
+      newGraph: historyPreview.newGraph,
+      finalDiff: historyPreview.diffStat,
+      finalDiffStat: historyPreview.diffStat,
+      finalDiffPatch: historyPreview.diffPatch,
+      oldMetadata: historyPreview.oldMetadata,
+      newMetadata: historyPreview.newMetadata,
+      historyPreview,
       warnings,
       changedCommitCount: plan.changedCommitCount,
     }
@@ -213,11 +220,6 @@ async function assertTreeMatchesTarget(repoPath: string, targetSha: string): Pro
   const targetTree = (await runGitChecked({ repoPath, args: ["rev-parse", `${targetSha}^{tree}`] })).stdout.trim()
   const splitTree = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD^{tree}"] })).stdout.trim()
   if (splitTree !== targetTree) throw new Error("Split commits do not reproduce the selected commit tree")
-}
-
-async function graph(repoPath: string, plan: SplitCommitPlan): Promise<string> {
-  const range = plan.root ? "HEAD" : `${plan.baseCommit}..HEAD`
-  return (await runGitChecked({ repoPath, args: ["log", "--graph", "--decorate", "--oneline", "--date=short", range] })).stdout
 }
 
 async function listChangedPaths(repoPath: string, sha: string): Promise<string[]> {

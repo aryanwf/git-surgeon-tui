@@ -1,5 +1,5 @@
 import type { CommitSummary } from "../git/log"
-import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState } from "./types"
+import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, VisualRebaseState } from "./types"
 
 export function createInitialState(repoPath?: string): AppState {
   return {
@@ -70,4 +70,16 @@ export function startDateFlow(state: AppState, commit: CommitSummary): AppState 
     newDate: commit.authorDate,
   }
   return { ...state, screen: "rewrite-date", rewriteFlow: flow }
+}
+
+export function startVisualRebaseFlow(state: AppState, baseCommit: CommitSummary): AppState {
+  const flow: VisualRebaseState = {
+    type: "visual-rebase",
+    step: "form",
+    baseSha: baseCommit.sha,
+    baseSubject: baseCommit.subject,
+    selectedRowIndex: 0,
+    activeField: "list",
+  }
+  return { ...state, screen: "rewrite-visual-rebase", rewriteFlow: flow }
 }

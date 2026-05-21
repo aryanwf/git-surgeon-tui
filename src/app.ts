@@ -3,14 +3,15 @@ import { changeCommitAuthor, validateAuthorInput } from "./git/author"
 import { getConflictReport, rebaseAbort, rebaseContinue, rebaseSkip } from "./git/conflict"
 import { changeOldCommitDate } from "./git/date"
 import { dropSingleCommit } from "./git/drop"
-import { getCommitDiff, searchCommits } from "./git/log"
+import { getCommitDiff, listCommits, searchCommits } from "./git/log"
 import { buildHistoryPreview, withScratchClone } from "./git/preview"
+import { visualInteractiveRebase, type VisualRebaseAction, type VisualRebaseRow } from "./git/rebase"
 import { validateRepository } from "./git/repository"
 import { getRecoveryReport } from "./git/recovery"
 import { renameOldCommitMessages } from "./git/reword"
 import { analyzeRepositorySize } from "./git/size-analyzer"
-import { createInitialState, startAuthorFlow, startDateFlow, startDropFlow, startRewordFlow } from "./state/store"
-import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState } from "./state/types"
+import { createInitialState, startAuthorFlow, startDateFlow, startDropFlow, startRewordFlow, startVisualRebaseFlow } from "./state/store"
+import type { AppState, RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, VisualRebaseState, VisualRebaseTodoRow } from "./state/types"
 import { DashboardScreen } from "./tui/screens/dashboard"
 import { HistoryScreen } from "./tui/screens/history"
 import { PreviewScreen } from "./tui/screens/preview"
@@ -21,6 +22,7 @@ import {
   ChangeDateFlowScreen,
   DropCommitFlowScreen,
   RewordFlowScreen,
+  VisualRebaseFlowScreen,
 } from "./tui/screens/rewrite-flow"
 import { ConflictScreen } from "./tui/screens/conflict"
 import { SizeAnalyzerScreen } from "./tui/screens/size-analyzer"
@@ -239,6 +241,63 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             return
           }
           renderer.root.add(ChangeDateFlowScreen(repository, flow))
+        } else if (state.screen === "rewrite-visual-rebase") {
+          const flow = state.rewriteFlow as VisualRebaseState
+          if (flow.step === "form" && !flow.rows) {
+            try {
+              const commits = await listCommits(repository.repoPath, `${flow.baseSha}..HEAD`)
+              state = {
+                ...state,
+                rewriteFlow: {
+                  ...flow,
+                  rows: commits.map((commit) => ({
+                    sha: commit.sha,
+                    shortSha: commit.shortSha,
+                    subject: commit.subject,
+                    action: "pick",
+                  })),
+                  error: commits.length === 0 ? "Selected base has no commits after it" : undefined,
+                },
+              }
+            } catch (err) {
+              state = { ...state, rewriteFlow: { ...flow, error: err instanceof Error ? err.message : String(err) } }
+            }
+            void render()
+            return
+          }
+          if (flow.step === "preview" && !flow.preview) {
+            try {
+              const result = await visualInteractiveRebase({
+                repoPath: repository.repoPath,
+                base: flow.baseSha,
+                rows: toVisualRebaseRows(flow),
+              })
+              state = { ...state, rewriteFlow: { ...flow, preview: result.preview, error: undefined } }
+            } catch (err) {
+              state = { ...state, rewriteFlow: { ...flow, step: "form", error: err instanceof Error ? err.message : String(err) } }
+            }
+            void render()
+            return
+          }
+          if (flow.step === "applying") {
+            try {
+              const result = await visualInteractiveRebase({
+                repoPath: repository.repoPath,
+                base: flow.baseSha,
+                rows: toVisualRebaseRows(flow),
+                apply: true,
+              })
+              state = {
+                ...state,
+                rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, error: undefined },
+              }
+            } catch (err) {
+              state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
+            }
+            void render()
+            return
+          }
+          renderer.root.add(VisualRebaseFlowScreen(repository, flow))
         } else {
           renderer.root.add(DashboardScreen(repository))
         }
@@ -259,7 +318,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     // Global shortcuts
     if (key.name === "q" || key.name === "escape") {
-      const rewrites = ["rewrite-reword", "rewrite-drop", "rewrite-author", "rewrite-date"] as const
+      const rewrites = ["rewrite-reword", "rewrite-drop", "rewrite-author", "rewrite-date", "rewrite-visual-rebase"] as const
       if (rewrites.includes(state.screen as (typeof rewrites)[number])) {
         state = { ...state, screen: "history", rewriteFlow: undefined }
         void render()
@@ -302,6 +361,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
     if (state.screen === "rewrite-drop") { handleDropKey(key); return }
     if (state.screen === "rewrite-author") { handleAuthorKey(key); return }
     if (state.screen === "rewrite-date") { handleDateKey(key); return }
+    if (state.screen === "rewrite-visual-rebase") { handleVisualRebaseKey(key); return }
   })
 
   // ── Conflict handlers ────────────────────────────────────────────────────
@@ -497,6 +557,82 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
     }
   }
 
+  // ── Visual rebase handlers ────────────────────────────────────────────────
+
+  function handleVisualRebaseKey(key: KeyEvent) {
+    const flow = state.rewriteFlow as VisualRebaseState
+    if (!flow) return
+
+    if (flow.step === "form") {
+      const rows = flow.rows ?? []
+      if (key.name === "return" && rows.length > 0) {
+        state = { ...state, rewriteFlow: { ...flow, step: "preview", preview: undefined, error: undefined } }
+        void render()
+        return
+      }
+      if (flow.activeField !== "list") {
+        if (key.name === "escape") {
+          state = { ...state, rewriteFlow: { ...flow, activeField: "list" } }
+          void render()
+          return
+        }
+        if (key.name === "backspace" || key.name === "delete") {
+          const field = flow.activeField
+          state = { ...state, rewriteFlow: updateSelectedVisualRow(flow, (row) => editVisualRowText(row, field, -1)) }
+          void render()
+          return
+        }
+        if (isTypableChar(key)) {
+          const field = flow.activeField
+          state = { ...state, rewriteFlow: updateSelectedVisualRow(flow, (row) => editVisualRowText(row, field, key.sequence)) }
+          void render()
+          return
+        }
+      }
+      if (key.name === "up" || key.name === "k") {
+        state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.max(0, flow.selectedRowIndex - 1) } }
+        void render()
+        return
+      }
+      if (key.name === "down" || key.name === "j") {
+        state = { ...state, rewriteFlow: { ...flow, selectedRowIndex: Math.min(Math.max(0, rows.length - 1), flow.selectedRowIndex + 1) } }
+        void render()
+        return
+      }
+      if (key.name === "left" || key.name === "right" || key.sequence === "x") {
+        const direction = key.name === "left" ? -1 : 1
+        state = { ...state, rewriteFlow: updateSelectedVisualRow(flow, (row, index) => ({ ...row, action: nextVisualAction(row.action, direction, index) })) }
+        void render()
+        return
+      }
+      if (key.sequence === "[") {
+        state = { ...state, rewriteFlow: moveVisualRow(flow, -1) }
+        void render()
+        return
+      }
+      if (key.sequence === "]") {
+        state = { ...state, rewriteFlow: moveVisualRow(flow, 1) }
+        void render()
+        return
+      }
+      if (key.sequence === "e") {
+        state = { ...state, rewriteFlow: updateSelectedVisualRow({ ...flow, activeField: "message" }, (row) => ({ ...row, message: row.message ?? row.subject })) }
+        void render()
+        return
+      }
+      if (key.sequence === "c") {
+        state = { ...state, rewriteFlow: updateSelectedVisualRow({ ...flow, activeField: "command" }, (row) => ({ ...row, action: "exec", command: row.command ?? "" })) }
+        void render()
+        return
+      }
+    }
+
+    if (flow.step === "preview" && flow.preview && key.name === "return") {
+      state = { ...state, rewriteFlow: { ...flow, step: "applying" } }
+      void render()
+    }
+  }
+
   await render()
 }
 
@@ -537,10 +673,55 @@ function handleHistoryKey(state: AppState, key: KeyEvent): AppState {
     if (key.sequence === "t" && state.lastSelectedCommit) {
       return startDateFlow(state, state.lastSelectedCommit)
     }
+    if (key.sequence === "i" && state.lastSelectedCommit) {
+      return startVisualRebaseFlow(state, state.lastSelectedCommit)
+    }
     // Otherwise append to search filter (exclude single-letter shortcuts and q)
-    if (key.sequence !== "q" && key.sequence !== "w" && key.sequence !== "d" && key.sequence !== "a" && key.sequence !== "t") {
+    if (key.sequence !== "q" && key.sequence !== "w" && key.sequence !== "d" && key.sequence !== "a" && key.sequence !== "t" && key.sequence !== "i") {
       return { ...state, historyQuery: `${state.historyQuery}${key.sequence}`, selectedCommitIndex: 0 }
     }
   }
   return state
+}
+
+function toVisualRebaseRows(flow: VisualRebaseState): VisualRebaseRow[] {
+  return (flow.rows ?? []).map((row) => ({
+    sha: row.sha,
+    action: row.action,
+    message: row.message,
+    command: row.command,
+  }))
+}
+
+function updateSelectedVisualRow(flow: VisualRebaseState, update: (row: VisualRebaseTodoRow, index: number) => VisualRebaseTodoRow): VisualRebaseState {
+  const rows = flow.rows ?? []
+  if (rows.length === 0) return flow
+  return {
+    ...flow,
+    rows: rows.map((row, index) => index === flow.selectedRowIndex ? update(row, index) : row),
+  }
+}
+
+function editVisualRowText(row: VisualRebaseTodoRow, field: "message" | "command", value: string | -1): VisualRebaseTodoRow {
+  const current = field === "message" ? row.message ?? row.subject : row.command ?? ""
+  const next = value === -1 ? current.slice(0, -1) : `${current}${value}`
+  return field === "message" ? { ...row, message: next } : { ...row, command: next }
+}
+
+function moveVisualRow(flow: VisualRebaseState, direction: -1 | 1): VisualRebaseState {
+  const rows = [...(flow.rows ?? [])]
+  const from = flow.selectedRowIndex
+  const to = from + direction
+  if (from < 0 || to < 0 || from >= rows.length || to >= rows.length) return flow
+  const [row] = rows.splice(from, 1)
+  rows.splice(to, 0, row)
+  return { ...flow, rows, selectedRowIndex: to }
+}
+
+function nextVisualAction(action: VisualRebaseAction, direction: number, index: number): VisualRebaseAction {
+  const actions: VisualRebaseAction[] = index === 0
+    ? ["pick", "reword", "edit", "drop", "exec"]
+    : ["pick", "reword", "edit", "squash", "fixup", "drop", "exec"]
+  const current = Math.max(0, actions.indexOf(action))
+  return actions[(current + direction + actions.length) % actions.length]
 }

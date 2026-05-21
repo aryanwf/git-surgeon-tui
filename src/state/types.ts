@@ -3,6 +3,7 @@ import type { RepositoryState } from "../git/repository"
 import type { ChangeCommitAuthorPreview } from "../git/author"
 import type { ChangeCommitDatePreview } from "../git/date"
 import type { DropCommitPreview } from "../git/drop"
+import type { VisualRebaseAction, VisualRebasePreview } from "../git/rebase"
 import type { RenamePreview } from "../git/reword"
 
 export type AppScreen =
@@ -16,6 +17,7 @@ export type AppScreen =
   | "rewrite-drop"
   | "rewrite-author"
   | "rewrite-date"
+  | "rewrite-visual-rebase"
   | "conflict"
 
 export type RewriteStep = "form" | "preview" | "applying" | "result"
@@ -94,11 +96,35 @@ export type RewriteDateState = {
   error?: string
 }
 
+export type VisualRebaseTodoRow = {
+  sha: string
+  shortSha: string
+  subject: string
+  action: VisualRebaseAction
+  message?: string
+  command?: string
+}
+
+export type VisualRebaseState = {
+  type: "visual-rebase"
+  step: RewriteStep
+  baseSha: string
+  baseSubject: string
+  rows?: VisualRebaseTodoRow[]
+  selectedRowIndex: number
+  activeField: "list" | "message" | "command"
+  preview?: VisualRebasePreview
+  backupRef?: string
+  operationLogPath?: string
+  error?: string
+}
+
 export type RewriteFlowState =
   | RewriteRewordState
   | RewriteDropState
   | RewriteAuthorState
   | RewriteDateState
+  | VisualRebaseState
 
 export type AppState = {
   screen: AppScreen

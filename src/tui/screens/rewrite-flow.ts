@@ -1,6 +1,6 @@
 import { Box, Text } from "@opentui/core"
 import type { RepositoryState } from "../../git/repository"
-import type { RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState } from "../../state/types"
+import type { RewriteAuthorState, RewriteDateState, RewriteDropState, RewriteRewordState, VisualRebaseState, VisualRebaseTodoRow } from "../../state/types"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
@@ -346,6 +346,96 @@ function DateResultScreen(state: RepositoryState, flow: RewriteDateState) {
   )
 }
 
+// ─── Visual Interactive Rebase ───────────────────────────────────────────────
+
+export function VisualRebaseFlowScreen(state: RepositoryState, flow: VisualRebaseState) {
+  if (flow.step === "form") return VisualRebaseFormScreen(state, flow)
+  if (flow.step === "preview") return VisualRebasePreviewScreen(state, flow)
+  if (flow.step === "applying") return ApplyingScreen(state, "Applying visual interactive rebase...")
+  return VisualRebaseResultScreen(state, flow)
+}
+
+function VisualRebaseFormScreen(state: RepositoryState, flow: VisualRebaseState) {
+  const rows = flow.rows ?? []
+  const selected = rows[flow.selectedRowIndex]
+  return AppFrame(
+    "Visual Interactive Rebase",
+    Box(
+      { flexDirection: "column", gap: 1, flexGrow: 1 },
+      Box(
+        { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
+        Text({ content: "Range base (excluded):", fg: theme.accent }),
+        Text({ content: `  ${flow.baseSha.slice(0, 10)}  ${truncate(flow.baseSubject, 72)}`, fg: theme.text }),
+      ),
+      Box(
+        { flexDirection: "row", gap: 1, flexGrow: 1 },
+        Box(
+          { flexDirection: "column", width: "62%", borderStyle: "single", borderColor: theme.border, padding: 1 },
+          Text({ content: "Todo (oldest to newest)", fg: theme.accent }),
+          ...visualTodoLines(rows, flow.selectedRowIndex),
+        ),
+        Box(
+          { flexDirection: "column", flexGrow: 1, borderStyle: "single", borderColor: theme.border, padding: 1 },
+          Text({ content: selected ? `${selected.shortSha} ${selected.action}` : "No commit selected", fg: theme.accent }),
+          ...(selected ? selectedDetails(selected, flow.activeField) : [Text({ content: "Select a base with commits after it.", fg: theme.muted })]),
+        ),
+      ),
+      ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
+    ),
+    Text({ content: "j/k: select  left/right/x: action  [/]: reorder  e: edit msg  c: exec cmd  enter: preview", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+function VisualRebasePreviewScreen(state: RepositoryState, flow: VisualRebaseState) {
+  const p = flow.preview
+  return AppFrame(
+    "Visual Interactive Rebase — Preview",
+    Box(
+      { flexDirection: "column", gap: 1, flexGrow: 1 },
+      Box(
+        { flexDirection: "row", gap: 1 },
+        previewPanel("Before", p?.oldGraph ?? "(computing...)", theme.danger, 10),
+        previewPanel("After", p?.newGraph ?? "(computing...)", theme.ok, 10),
+      ),
+      Box(
+        { flexDirection: "row", gap: 1 },
+        previewPanel("Generated todo", p?.todo ?? "(computing...)", theme.text, 8),
+        previewPanel("Diff stat", p?.finalDiffStat ?? "(computing...)", theme.text, 8),
+      ),
+      warningsBox(p?.warnings ?? []),
+    ),
+    Text({ content: "enter: apply to real repo  escape: cancel", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
+function VisualRebaseResultScreen(state: RepositoryState, flow: VisualRebaseState) {
+  if (flow.error) {
+    return AppFrame(
+      "Visual Interactive Rebase — Failed",
+      Box(
+        { flexDirection: "column", gap: 1 },
+        Text({ content: `Error: ${flow.error}`, fg: theme.danger }),
+        ...(flow.backupRef ? [Text({ content: `Backup ref preserved: ${flow.backupRef}`, fg: theme.ok })] : []),
+      ),
+      Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+      StatusBar(state),
+    )
+  }
+  return AppFrame(
+    "Visual Interactive Rebase — Applied",
+    Box(
+      { flexDirection: "column", gap: 1 },
+      Text({ content: "Visual interactive rebase applied successfully.", fg: theme.ok }),
+      ...(flow.backupRef ? [Text({ content: `Backup ref: ${flow.backupRef}`, fg: theme.text })] : []),
+      ...(flow.operationLogPath ? [Text({ content: `Operation log: ${flow.operationLogPath}`, fg: theme.muted })] : []),
+    ),
+    Text({ content: "escape: back to history  b: dashboard", fg: theme.muted }),
+    StatusBar(state),
+  )
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 function ApplyingScreen(state: RepositoryState, message: string) {
@@ -396,6 +486,25 @@ function warningsBox(warnings: string[]) {
     Text({ content: "Warnings:", fg: theme.danger }),
     ...warnings.map((w) => Text({ content: `  ${truncate(w, 90)}`, fg: theme.text })),
   )
+}
+
+function visualTodoLines(rows: VisualRebaseTodoRow[], selectedIndex: number) {
+  if (rows.length === 0) return [Text({ content: "No commits in selected range", fg: theme.muted })]
+  return rows.slice(0, 16).map((row, index) => {
+    const prefix = index === selectedIndex ? ">" : " "
+    const action = row.action.padEnd(6)
+    return Text({ content: `${prefix} ${action} ${row.shortSha.padEnd(9)} ${truncate(row.subject, 44)}`, fg: index === selectedIndex ? theme.accent : theme.text })
+  })
+}
+
+function selectedDetails(row: VisualRebaseTodoRow, activeField: "list" | "message" | "command") {
+  return [
+    Text({ content: `Subject: ${truncate(row.subject, 72)}`, fg: theme.text }),
+    Text({ content: `Action:  ${row.action}`, fg: theme.text }),
+    Text({ content: `Message: ${truncate(row.message ?? row.subject, 72)}${activeField === "message" ? "|" : ""}`, fg: activeField === "message" ? theme.accent : theme.muted }),
+    Text({ content: `Command: ${truncate(row.command ?? "", 72)}${activeField === "command" ? "|" : ""}`, fg: activeField === "command" ? theme.accent : theme.muted }),
+    Text({ content: "Notes: squash/fixup cannot be first; merge commits are blocked in v1.", fg: theme.muted }),
+  ]
 }
 
 function truncate(value: string, maxLength: number): string {

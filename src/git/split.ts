@@ -53,6 +53,7 @@ type SplitCommitPlan = {
   target: CommitSummary
   baseCommit?: string
   root: boolean
+  rangeCommits: CommitSummary[]
   descendants: CommitSummary[]
   parts: SplitCommitPart[]
   changedPaths: string[]
@@ -115,6 +116,7 @@ export async function buildSplitCommitPlan(repoPath: string, sha: string, parts:
     target,
     baseCommit,
     root,
+    rangeCommits,
     descendants: rangeCommits.slice(1),
     parts: parts.map((part) => ({ ...part, paths: [...part.paths] })),
     changedPaths,
@@ -173,52 +175,84 @@ async function previewSplitCommit(repoPath: string, plan: SplitCommitPlan, warni
 
 async function executeSplitCommitRewrite(repoPath: string, plan: SplitCommitPlan): Promise<{ commands: GitCommandResult[]; splitCommitIds: string[] }> {
   const helperDir = await mkdtemp(join(tmpdir(), "gitsurgeon-split-"))
-  const todoPath = join(helperDir, "todo")
-  const editorPath = join(helperDir, "sequence-editor.sh")
   const commands: GitCommandResult[] = []
   const splitCommitIds: string[] = []
+  const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
   try {
-    await Bun.write(todoPath, plan.todo)
-    await Bun.write(editorPath, `#!/bin/sh\ncp "${todoPath}" "$1"\n`)
     await runGitChecked({ args: ["update-index", "--refresh"], repoPath })
-    await Bun.spawn(["chmod", "+x", editorPath]).exited
 
-    const rebaseArgs = plan.root ? ["rebase", "-i", "--root"] : ["rebase", "-i", plan.baseCommit!]
-    const rebaseStart = await runGit({ repoPath, args: rebaseArgs, env: { GIT_SEQUENCE_EDITOR: editorPath }, timeoutMs: 120_000 })
-    commands.push(rebaseStart)
-    if (rebaseStart.exitCode !== 0 && !(await isRebaseInProgress(repoPath))) throw new GitCommandError("Interactive rebase failed to start", rebaseStart)
-
-    const unstage = await resetSelectedCommit(repoPath, plan)
-    commands.push(unstage)
-    if (unstage.exitCode !== 0) throw new GitCommandError("Reset selected commit failed during split flow", unstage)
+    let previousNew: string | undefined = plan.root ? undefined : plan.baseCommit
+    const baseForDiff = plan.baseCommit ?? emptyTree
 
     for (const [index, part] of plan.parts.entries()) {
-      const add = await runGit({ repoPath, args: ["add", "--", ...part.paths], timeoutMs: 120_000 })
-      commands.push(add)
-      if (add.exitCode !== 0) throw new GitCommandError("Staging split part failed", add)
+      const indexPath = join(helperDir, `part-${index}.index`)
+      const env = { GIT_INDEX_FILE: indexPath }
+      const indexBase = previousNew ? `${previousNew}^{tree}` : undefined
+      const readTree = await runGitChecked({ repoPath, args: indexBase ? ["read-tree", indexBase] : ["read-tree", "--empty"], env })
+      commands.push(readTree)
 
-      const messagePath = join(helperDir, `part-${index}.message`)
-      await Bun.write(messagePath, part.message)
-      const commitArgs = ["commit", "-F", messagePath]
-      if (part.message === "") commitArgs.push("--allow-empty-message")
-      const commit = await runGit({ repoPath, args: commitArgs, timeoutMs: 120_000 })
-      commands.push(commit)
-      if (commit.exitCode !== 0) throw new GitCommandError("Creating split commit failed", commit)
-      splitCommitIds.push((await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim())
+      const patch = await runGitChecked({ repoPath, args: ["diff", "--binary", baseForDiff, plan.target.sha, "--", ...part.paths] })
+      commands.push(patch)
+      if (patch.stdout.trim() !== "") {
+        const apply = await runGitChecked({ repoPath, args: ["apply", "--cached"], env, stdin: patch.stdout })
+        commands.push(apply)
+      }
+
+      const treeResult = await runGitChecked({ repoPath, args: ["write-tree"], env })
+      commands.push(treeResult)
+      const tree = treeResult.stdout.trim()
+
+      const commitArgs = ["commit-tree", tree]
+      if (previousNew) commitArgs.push("-p", previousNew)
+      const built = await runGitChecked({ repoPath, args: commitArgs, env: commitEnv(plan.target), stdin: part.message })
+      commands.push(built)
+      previousNew = built.stdout.trim()
+      splitCommitIds.push(previousNew)
     }
 
-    await assertNoRemainingSplitChanges(repoPath)
-    await assertTreeMatchesTarget(repoPath, plan.target.sha)
+    if (!previousNew) throw new Error("Split rewrite produced no commits")
+    const splitTree = (await runGitChecked({ repoPath, args: ["rev-parse", `${previousNew}^{tree}`] })).stdout.trim()
+    const targetTree = (await runGitChecked({ repoPath, args: ["rev-parse", `${plan.target.sha}^{tree}`] })).stdout.trim()
+    if (splitTree !== targetTree) throw new Error("Split commits do not reproduce the selected commit tree")
 
-    const cont = await runGit({ repoPath, args: ["rebase", "--continue"], env: { GIT_EDITOR: ":" }, timeoutMs: 120_000 })
-    commands.push(cont)
-    if (cont.exitCode !== 0 && (await hasConflicts(repoPath))) throw new GitCommandError("Rebase stopped with conflicts", cont)
-    if (cont.exitCode !== 0 && (await isRebaseInProgress(repoPath))) throw new GitCommandError("Rebase continue failed", cont)
+    for (const commit of plan.rangeCommits.slice(1)) {
+      const treeResult = await runGitChecked({ repoPath, args: ["rev-parse", `${commit.sha}^{tree}`] })
+      commands.push(treeResult)
+      const messageResult = await runGitChecked({ repoPath, args: ["log", "-1", "--format=%B", commit.sha] })
+      commands.push(messageResult)
+      const built = await runGitChecked({ repoPath, args: ["commit-tree", treeResult.stdout.trim(), "-p", previousNew], env: commitEnv(commit), stdin: messageResult.stdout })
+      commands.push(built)
+      previousNew = built.stdout.trim()
+    }
+
+    const refResult = await runGitChecked({ repoPath, args: ["rev-parse", "--symbolic-full-name", "HEAD"] })
+    commands.push(refResult)
+    const headRef = refResult.stdout.trim()
+    const oldHead = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
+
+    const update = headRef && headRef !== "HEAD"
+      ? await runGitChecked({ repoPath, args: ["update-ref", "-m", "gitsurgeon: split-single-commit", headRef, previousNew, oldHead] })
+      : await runGitChecked({ repoPath, args: ["update-ref", "--no-deref", "-m", "gitsurgeon: split-single-commit", "HEAD", previousNew, oldHead] })
+    commands.push(update)
+
+    const reset = await runGit({ repoPath, args: ["reset", "--hard", "HEAD"], timeoutMs: 120_000 })
+    commands.push(reset)
 
     return { commands, splitCommitIds }
   } finally {
     await rm(helperDir, { recursive: true, force: true })
+  }
+}
+
+function commitEnv(commit: CommitSummary): Record<string, string> {
+  return {
+    GIT_AUTHOR_NAME: commit.authorName,
+    GIT_AUTHOR_EMAIL: commit.authorEmail,
+    GIT_AUTHOR_DATE: commit.authorDate,
+    GIT_COMMITTER_NAME: commit.committerName,
+    GIT_COMMITTER_EMAIL: commit.committerEmail,
+    GIT_COMMITTER_DATE: commit.committerDate,
   }
 }
 

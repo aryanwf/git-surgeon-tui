@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { resolve } from "node:path"
 import { renameOldCommitMessages, type RenameCommitMessage } from "./git/reword"
 import { dropSingleCommit } from "./git/drop"
 import { splitSingleCommit, type SplitCommitPart } from "./git/split"
@@ -33,6 +34,7 @@ async function main(args: string[]): Promise<void> {
   }
 
   if (command === "tui") {
+    assertInteractiveTerminal()
     const options = parseTuiArgs(rest)
     await runGitSurgeonTui({ repoPath: options.repo })
     return
@@ -178,17 +180,32 @@ function parseTuiArgs(args: string[]): Pick<CliOptions, "repo"> {
   const options: Pick<CliOptions, "repo"> = {}
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--repo") options.repo = args[++index]
+    if (arg === "--repo") options.repo = resolveRepoArg(args[++index])
     else throw new Error(`Unknown argument: ${arg}`)
   }
   return options
+}
+
+function assertInteractiveTerminal(): void {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("The TUI needs an interactive terminal. Re-run from a real SSH terminal, not a non-interactive command runner.")
+  }
+
+  const term = process.env.TERM
+  if (!term || term === "dumb") {
+    throw new Error("The TUI needs a capable terminal. Set TERM=xterm-256color and try again.")
+  }
+}
+
+function resolveRepoArg(repoPath: string | undefined): string | undefined {
+  return repoPath ? resolve(repoPath) : undefined
 }
 
 function parseDropArgs(args: string[]): CliOptions {
   const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--repo") options.repo = args[++index]
+    if (arg === "--repo") options.repo = resolveRepoArg(args[++index])
     else if (arg === "--apply") options.apply = true
     else if (arg === "--sha") options.sha = args[++index]
     else throw new Error(`Unknown argument: ${arg}`)
@@ -200,7 +217,7 @@ function parseSplitArgs(args: string[]): CliOptions {
   const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--repo") options.repo = args[++index]
+    if (arg === "--repo") options.repo = resolveRepoArg(args[++index])
     else if (arg === "--apply") options.apply = true
     else if (arg === "--sha") options.sha = args[++index]
     else if (arg === "--part") options.parts.push(parsePartArg(args[++index]))
@@ -214,7 +231,7 @@ function parseRenameArgs(args: string[]): CliOptions {
   const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--repo") options.repo = args[++index]
+    if (arg === "--repo") options.repo = resolveRepoArg(args[++index])
     else if (arg === "--apply") options.apply = true
     else if (arg === "--message") options.messages.push(parseMessageArg(args[++index]))
     else throw new Error(`Unknown argument: ${arg}`)
@@ -227,7 +244,7 @@ function parseRebaseArgs(args: string[]): CliOptions {
   const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--repo") options.repo = args[++index]
+    if (arg === "--repo") options.repo = resolveRepoArg(args[++index])
     else if (arg === "--base") options.base = args[++index]
     else if (arg === "--apply") options.apply = true
     else if (arg === "--row") options.rows.push(parseRowArg(args[++index]))
@@ -241,7 +258,7 @@ function parseDateArgs(args: string[]): CliOptions {
   const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--repo") options.repo = args[++index]
+    if (arg === "--repo") options.repo = resolveRepoArg(args[++index])
     else if (arg === "--apply") options.apply = true
     else if (arg === "--sha") options.sha = args[++index]
     else if (arg === "--date") options.date = args[++index]
@@ -255,7 +272,7 @@ function parseSizeArgs(args: string[]): CliOptions {
   const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--repo") options.repo = args[++index]
+    if (arg === "--repo") options.repo = resolveRepoArg(args[++index])
     else if (arg === "--method") options.method = parseSizeMethod(args[++index])
     else if (arg === "--sort") options.sortBy = parseSizeSort(args[++index])
     else if (arg === "--status") options.status = parseSizeStatus(args[++index])
@@ -269,7 +286,7 @@ function parseReportArgs(args: string[]): CliOptions {
   const options: CliOptions = { messages: [], parts: [], rows: [], apply: false }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--repo") options.repo = args[++index]
+    if (arg === "--repo") options.repo = resolveRepoArg(args[++index])
     else if (arg === "--output") options.output = args[++index]
     else throw new Error(`Unknown argument: ${arg}`)
   }

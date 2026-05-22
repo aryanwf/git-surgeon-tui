@@ -39,6 +39,12 @@ Launch the TUI:
 bun src/index.ts tui
 ```
 
+Run directly from GitHub without cloning:
+
+```bash
+bunx github:aryanwf/git-surgeon-tui tui --repo .
+```
+
 Or use the CLI directly. Every command previews by default; add `--apply` to write.
 
 ### Reword

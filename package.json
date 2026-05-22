@@ -1,9 +1,10 @@
 {
-  "name": "gitsurgeon",
+  "name": "git-surgeon-tui",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "gitsurgeon": "./src/index.ts"
+    "gitsurgeon": "./src/index.ts",
+    "git-surgeon-tui": "./src/index.ts"
   },
   "scripts": {
     "start": "bun src/index.ts tui",

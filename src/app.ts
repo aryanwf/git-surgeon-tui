@@ -2,7 +2,7 @@ import { createCliRenderer, type KeyEvent } from "@opentui/core"
 import type { Dirent } from "node:fs"
 import { readdir } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, join, resolve } from "node:path"
 import { loadGitSurgeonConfig, rememberRecentRepo } from "./config"
 import { changeCommitAuthor, validateAuthorInput } from "./git/author"
 import { getConflictReport, rebaseAbort, rebaseContinue, rebaseSkip } from "./git/conflict"
@@ -45,12 +45,19 @@ export type RunTuiOptions = {
 }
 
 export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<void> {
-  const renderer = await createCliRenderer({ exitOnCtrlC: true })
+  const isSshSession = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY || process.env.SSH_CLIENT)
+  const renderer = await createCliRenderer({
+    exitOnCtrlC: true,
+    remote: isSshSession,
+    useMouse: !isSshSession,
+    useKittyKeyboard: isSshSession ? null : undefined,
+  })
   const config = await loadGitSurgeonConfig()
-  let state: AppState = createInitialState(options.repoPath)
+  const initialRepoPath = normalizeRepoPath(options.repoPath)
+  let state: AppState = createInitialState(initialRepoPath)
   const discoveredRepos = await discoverRepoFolders(homedir())
-  const pickerPaths = uniquePaths([options.repoPath, process.cwd(), ...discoveredRepos, ...(options.recentRepos ?? []), ...config.recentRepos])
-  if (options.repoPath) void rememberRecentRepo(options.repoPath).catch(() => {})
+  const pickerPaths = uniquePaths([initialRepoPath, process.cwd(), ...discoveredRepos, ...(options.recentRepos ?? []), ...config.recentRepos].map(normalizeRepoPath))
+  if (initialRepoPath) void rememberRecentRepo(initialRepoPath).catch(() => {})
 
   const render = async () => {
     const mount = (screen: Parameters<typeof renderer.root.add>[0]) => {
@@ -1102,6 +1109,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
 
 function uniquePaths(paths: (string | undefined)[]): string[] {
   return [...new Set(paths.filter((path): path is string => Boolean(path)))]
+}
+
+function normalizeRepoPath(repoPath: string | undefined): string | undefined {
+  return repoPath ? resolve(repoPath) : undefined
 }
 
 async function discoverRepoFolders(rootPath: string): Promise<string[]> {

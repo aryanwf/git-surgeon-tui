@@ -48,7 +48,7 @@ function backupRefsSection(report: RecoveryReport, selectedBackupIndex: number) 
         const absoluteIndex = scrollStart + index
         const selected = absoluteIndex === selectedBackupIndex
         return Text({
-          content: `${ref.sha.slice(0, 10)} ${truncate(ref.refName, 88)}`,
+          content: `${formatBackupDate(ref.date)}  ${ref.sha.slice(0, 10)}  ${truncate(ref.refName, 68)}`,
           fg: selected ? theme.background : theme.text,
           bg: selected ? theme.accent : theme.panel,
         })
@@ -91,6 +91,17 @@ function formatSize(size?: number): string {
   if (size === undefined) return ""
   if (size < 1024) return `${size} B`
   return `${(size / 1024).toFixed(1)} KiB`
+}
+
+function formatBackupDate(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.slice(0, 16).padEnd(16)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  const hour = String(date.getHours()).padStart(2, "0")
+  const minute = String(date.getMinutes()).padStart(2, "0")
+  return `${year}-${month}-${day} ${hour}:${minute}`
 }
 
 function truncate(value: string, maxLength: number): string {

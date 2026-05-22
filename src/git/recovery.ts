@@ -57,7 +57,7 @@ export async function listReflog(repoPath: string, limit = 30): Promise<ReflogEn
 
 export async function listBackupRefs(repoPath: string): Promise<BackupRef[]> {
   const format = "%(refname)%00%(objectname)%00%(creatordate:iso-strict)%00%(subject)%1e"
-  const result = await runGit({ repoPath, args: ["for-each-ref", "refs/gitsurgeon/backups", `--format=${format}`] })
+  const result = await runGit({ repoPath, args: ["for-each-ref", "--sort=-creatordate", "refs/gitsurgeon/backups", `--format=${format}`] })
   if (result.exitCode !== 0) return []
   return parseBackupRefs(result.stdout)
 }
@@ -145,6 +145,7 @@ export function parseBackupRefs(output: string): BackupRef[] {
       const [refName, sha, date, subject] = row.split("\x00")
       return { refName, sha, date, subject }
     })
+    .sort((a, b) => b.date.localeCompare(a.date))
 }
 
 export function parseDanglingObjects(output: string): DanglingObject[] {

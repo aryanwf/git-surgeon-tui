@@ -32,11 +32,11 @@ test("renders selected commit rows and selected commit diff", async () => {
 test("parses recovery report rows", () => {
   const sha = "a".repeat(40)
   const reflog = parseReflog(`${sha}\x00HEAD@{0}\x00commit: add file\x00Test User\x00test@example.com\x002026-01-01T00:00:00+00:00\x1e`)
-  const refs = parseBackupRefs(`refs/gitsurgeon/backups/20260101/main\x00${sha}\x002026-01-01T00:00:00+00:00\x00third commit\x1e`)
+  const refs = parseBackupRefs(`refs/gitsurgeon/backups/20260101/main\x00${sha}\x002026-01-01T00:00:00+00:00\x00third commit\x1erefs/gitsurgeon/backups/20260102/main\x00${sha}\x002026-01-02T00:00:00+00:00\x00newest commit\x1e`)
   const dangling = parseDanglingObjects(`dangling commit ${sha}\nunreachable blob ${"b".repeat(40)}\n`)
 
   expect(reflog[0]).toMatchObject({ sha, selector: "HEAD@{0}", subject: "commit: add file" })
-  expect(refs[0]).toMatchObject({ sha, refName: "refs/gitsurgeon/backups/20260101/main" })
+  expect(refs.map((ref) => ref.refName)).toEqual(["refs/gitsurgeon/backups/20260102/main", "refs/gitsurgeon/backups/20260101/main"])
   expect(dangling).toEqual([
     { objectType: "commit", sha },
     { objectType: "blob", sha: "b".repeat(40) },

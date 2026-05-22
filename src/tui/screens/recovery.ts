@@ -12,8 +12,8 @@ export function RecoveryScreen(state: RepositoryState, report: RecoveryReport, s
     "Recovery Viewer",
     Box(
       { flexDirection: "column", gap: 1, flexGrow: 1 },
+      backupRefsSection(report, selectedBackupIndex),
       section("Reflog", report.reflog.slice(0, 10).map((entry) => `${entry.selector.padEnd(12)} ${entry.sha.slice(0, 10)} ${truncate(entry.subject, 74)}`)),
-      section("Backup refs", report.backups.slice(0, 8).map((ref, index) => `${index === selectedBackupIndex ? ">" : " "} ${ref.sha.slice(0, 10)} ${truncate(ref.refName, 86)}`)),
       ...(previewMatchesSelection ? [applyPreviewSection(applyPreview)] : []),
       section("Dangling objects", report.dangling.slice(0, 10).map((object) => `${object.objectType.padEnd(6)} ${object.sha.slice(0, 10)} ${truncate(object.subject ?? formatSize(object.size), 74)}`)),
       ...(exportResult?.path ? [Text({ content: `Result: ${exportResult.path}`, fg: theme.ok })] : []),
@@ -28,6 +28,31 @@ export function RecoveryScreen(state: RepositoryState, report: RecoveryReport, s
       ["b / esc", "back to dashboard"],
     ]),
     StatusBar(state),
+  )
+}
+
+const backupRefLimit = 8
+
+function backupRefsSection(report: RecoveryReport, selectedBackupIndex: number) {
+  const total = report.backups.length
+  const scrollStart = visibleWindowStart(total, selectedBackupIndex, backupRefLimit)
+  const visibleBackups = report.backups.slice(scrollStart, scrollStart + backupRefLimit)
+  const title = total > backupRefLimit ? `Backup refs ${scrollStart + 1}-${scrollStart + visibleBackups.length}/${total}` : "Backup refs"
+
+  return Box(
+    { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
+    Text({ content: title, fg: theme.accent }),
+    ...(visibleBackups.length === 0
+      ? [Text({ content: "(none)", fg: theme.muted })]
+      : visibleBackups.map((ref, index) => {
+        const absoluteIndex = scrollStart + index
+        const selected = absoluteIndex === selectedBackupIndex
+        return Text({
+          content: `${ref.sha.slice(0, 10)} ${truncate(ref.refName, 88)}`,
+          fg: selected ? theme.background : theme.text,
+          bg: selected ? theme.accent : theme.panel,
+        })
+      })),
   )
 }
 
@@ -54,6 +79,12 @@ function section(title: string, rows: string[]) {
     Text({ content: title, fg: theme.accent }),
     ...(rows.length === 0 ? [Text({ content: "(none)", fg: theme.muted })] : rows.map((row) => Text({ content: row, fg: theme.text }))),
   )
+}
+
+function visibleWindowStart(total: number, selectedIndex: number, limit: number): number {
+  if (total <= limit) return 0
+  if (selectedIndex < limit) return 0
+  return Math.min(selectedIndex - limit + 1, total - limit)
 }
 
 function formatSize(size?: number): string {

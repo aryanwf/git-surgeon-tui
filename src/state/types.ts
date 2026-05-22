@@ -8,6 +8,7 @@ import type { HistoryEditPreview } from "../git/history-plan"
 import type { SplitCommitPreview } from "../git/split"
 import type { VisualRebaseAction, VisualRebasePreview } from "../git/rebase"
 import type { RenamePreview } from "../git/reword"
+import type { BackupApplyPreview } from "../git/recovery"
 
 export type AppScreen =
   | "repo-picker"
@@ -243,4 +244,5 @@ export type AppState = {
   rewriteFlow?: RewriteFlowState
   exportReportPath?: string
   exportReportError?: string
+  recoveryApplyPreview?: BackupApplyPreview
 }

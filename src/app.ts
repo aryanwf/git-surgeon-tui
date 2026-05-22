@@ -14,7 +14,7 @@ import { buildHistoryPreview, withScratchClone } from "./git/preview"
 import { visualInteractiveRebase, type VisualRebaseAction, type VisualRebaseRow } from "./git/rebase"
 import { validateRepository } from "./git/repository"
 import { exportLatestOperationReport } from "./git/report"
-import { createRecoveryBranch, getRecoveryReport, pushBackupToUpstream } from "./git/recovery"
+import { createRecoveryBranch, getRecoveryReport, previewBackupApplyToUpstream, pushBackupToUpstream } from "./git/recovery"
 import { renameOldCommitMessages } from "./git/reword"
 import { runGitChecked } from "./git/runner"
 import { analyzeRepositorySize } from "./git/size-analyzer"
@@ -81,7 +81,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           const report = await getRecoveryReport(repository.repoPath)
           const selectedRecoveryBackupIndex = clamp(state.selectedRecoveryBackupIndex, 0, Math.max(0, report.backups.length - 1))
           if (selectedRecoveryBackupIndex !== state.selectedRecoveryBackupIndex) state = { ...state, selectedRecoveryBackupIndex }
-          mount(RecoveryScreen(repository, report, selectedRecoveryBackupIndex, { path: state.exportReportPath, error: state.exportReportError }))
+          mount(RecoveryScreen(repository, report, selectedRecoveryBackupIndex, state.recoveryApplyPreview, { path: state.exportReportPath, error: state.exportReportError }))
         } else if (state.screen === "help") {
           mount(HelpScreen(repository))
         } else if (state.screen === "preview") {
@@ -521,10 +521,10 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
     if (!state.repoPath) return
     if (key.sequence === "e") {
       exportLatestOperationReport({ repoPath: state.repoPath }).then((result) => {
-        state = { ...state, exportReportPath: result.outputPath, exportReportError: undefined }
+        state = { ...state, exportReportPath: result.outputPath, exportReportError: undefined, recoveryApplyPreview: undefined }
         return render()
       }).catch((error) => {
-        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
+        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error), recoveryApplyPreview: undefined }
         return render()
       })
       return
@@ -535,31 +535,38 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         if (!backup) throw new Error("No Git Surgeon backup refs found")
         return createRecoveryBranch(state.repoPath!, backup.refName)
       }).then((branch) => {
-        state = { ...state, exportReportPath: `Created recovery branch: ${branch}`, exportReportError: undefined }
+        state = { ...state, exportReportPath: `Created recovery branch: ${branch}`, exportReportError: undefined, recoveryApplyPreview: undefined }
         return render()
       }).catch((error) => {
-        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
+        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error), recoveryApplyPreview: undefined }
         return render()
       })
       return
     }
     if (key.name === "up" || key.name === "down") {
       const direction = key.name === "up" ? -1 : 1
-      state = { ...state, selectedRecoveryBackupIndex: Math.max(0, state.selectedRecoveryBackupIndex + direction), exportReportPath: undefined, exportReportError: undefined }
+      state = { ...state, selectedRecoveryBackupIndex: Math.max(0, state.selectedRecoveryBackupIndex + direction), exportReportPath: undefined, exportReportError: undefined, recoveryApplyPreview: undefined }
       void render()
       return
     }
     if (key.name === "return") {
-      getRecoveryReport(state.repoPath).then((report) => {
+      getRecoveryReport(state.repoPath).then(async (report) => {
         const backup = report.backups[clamp(state.selectedRecoveryBackupIndex, 0, Math.max(0, report.backups.length - 1))]
         if (!backup) throw new Error("No Git Surgeon backup refs found")
         if (!state.repository?.upstream) throw new Error("Current branch has no upstream remote to update")
-        return pushBackupToUpstream(state.repoPath!, backup.refName, state.repository.upstream)
-      }).then((output) => {
-        state = { ...state, exportReportPath: output, exportReportError: undefined }
+        if (state.recoveryApplyPreview?.backupRef === backup.refName) {
+          const output = await pushBackupToUpstream(state.repoPath!, backup.refName, state.repository.upstream)
+          return { type: "applied" as const, output }
+        }
+        const preview = await previewBackupApplyToUpstream(state.repoPath!, backup.refName, state.repository.upstream)
+        return { type: "preview" as const, preview }
+      }).then((result) => {
+        state = result.type === "preview"
+          ? { ...state, recoveryApplyPreview: result.preview, exportReportPath: undefined, exportReportError: undefined }
+          : { ...state, recoveryApplyPreview: undefined, exportReportPath: result.output, exportReportError: undefined }
         return render()
       }).catch((error) => {
-        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
+        state = { ...state, recoveryApplyPreview: undefined, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
         return render()
       })
     }

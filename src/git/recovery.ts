@@ -29,6 +29,16 @@ export type RecoveryReport = {
   dangling: DanglingObject[]
 }
 
+export type BackupApplyPreview = {
+  backupRef: string
+  upstream: string
+  beforeHead: string
+  afterHead: string
+  beforeLog: string
+  afterLog: string
+  diffStat: string
+}
+
 export async function getRecoveryReport(repoPath: string): Promise<RecoveryReport> {
   const [reflog, backups, dangling] = await Promise.all([
     listReflog(repoPath, 30),
@@ -86,6 +96,27 @@ export async function pushBackupToUpstream(repoPath: string, backupRef: string, 
   const [, remote, branch] = match
   const result = await runGitChecked({ repoPath, args: ["push", "-f", remote, `${backupRef}:refs/heads/${branch}`] })
   return (result.stdout || result.stderr).trim() || `Pushed ${backupRef} to ${upstream}`
+}
+
+export async function previewBackupApplyToUpstream(repoPath: string, backupRef: string, upstream: string): Promise<BackupApplyPreview> {
+  validateBackupRef(backupRef)
+  const beforeHead = (await runGitChecked({ repoPath, args: ["rev-parse", upstream] })).stdout.trim()
+  const afterHead = (await runGitChecked({ repoPath, args: ["rev-parse", backupRef] })).stdout.trim()
+  const [beforeLog, afterLog, diffStat] = await Promise.all([
+    runGitChecked({ repoPath, args: ["log", "--oneline", "--decorate", "-n", "8", upstream] }),
+    runGitChecked({ repoPath, args: ["log", "--oneline", "--decorate", "-n", "8", backupRef] }),
+    runGitChecked({ repoPath, args: ["diff", "--stat", upstream, backupRef] }),
+  ])
+
+  return {
+    backupRef,
+    upstream,
+    beforeHead,
+    afterHead,
+    beforeLog: beforeLog.stdout.trim() || "(no commits)",
+    afterLog: afterLog.stdout.trim() || "(no commits)",
+    diffStat: diffStat.stdout.trim() || "(no file changes)",
+  }
 }
 
 export async function guardedResetBranchToBackup(repoPath: string, backupRef: string, confirmation: string): Promise<void> {

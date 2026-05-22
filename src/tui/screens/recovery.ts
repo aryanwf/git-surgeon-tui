@@ -5,21 +5,23 @@ import { KeyHelp } from "../components/key-help"
 import { StatusBar } from "../components/status-bar"
 import { AppFrame, theme } from "../layout"
 
-export function RecoveryScreen(state: RepositoryState, report: RecoveryReport, exportResult?: { path?: string; error?: string }) {
-  const newestBackup = report.backups[0]
+export function RecoveryScreen(state: RepositoryState, report: RecoveryReport, selectedBackupIndex: number, exportResult?: { path?: string; error?: string }) {
+  const selectedBackup = report.backups[selectedBackupIndex]
   return AppFrame(
     "Recovery Viewer",
     Box(
       { flexDirection: "column", gap: 1, flexGrow: 1 },
       section("Reflog", report.reflog.slice(0, 10).map((entry) => `${entry.selector.padEnd(12)} ${entry.sha.slice(0, 10)} ${truncate(entry.subject, 74)}`)),
-      section("Backup refs", report.backups.slice(0, 8).map((ref) => `${ref.sha.slice(0, 10)} ${truncate(ref.refName, 88)}`)),
+      section("Backup refs", report.backups.slice(0, 8).map((ref, index) => `${index === selectedBackupIndex ? ">" : " "} ${ref.sha.slice(0, 10)} ${truncate(ref.refName, 86)}`)),
       section("Dangling objects", report.dangling.slice(0, 10).map((object) => `${object.objectType.padEnd(6)} ${object.sha.slice(0, 10)} ${truncate(object.subject ?? formatSize(object.size), 74)}`)),
-      ...(exportResult?.path ? [Text({ content: `Exported report: ${exportResult.path}`, fg: theme.ok })] : []),
-      ...(exportResult?.error ? [Text({ content: `Export failed: ${exportResult.error}`, fg: theme.danger })] : []),
-      ...(newestBackup ? [Text({ content: `Newest backup action target: ${newestBackup.refName}`, fg: theme.muted })] : []),
+      ...(exportResult?.path ? [Text({ content: `Result: ${exportResult.path}`, fg: theme.ok })] : []),
+      ...(exportResult?.error ? [Text({ content: `Error: ${exportResult.error}`, fg: theme.danger })] : []),
+      ...(selectedBackup ? [Text({ content: `Selected backup: ${selectedBackup.refName}`, fg: theme.muted })] : []),
     ),
     KeyHelp([
-      ["c", "create recovery branch"],
+      ["↑/↓", "select backup"],
+      ["c", "create branch"],
+      ["enter", "force-push selected"],
       ["e", "export latest report"],
       ["b / esc", "back to dashboard"],
     ]),

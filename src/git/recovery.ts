@@ -79,6 +79,15 @@ export async function createRecoveryBranch(repoPath: string, backupRef: string, 
   return name
 }
 
+export async function pushBackupToUpstream(repoPath: string, backupRef: string, upstream: string): Promise<string> {
+  validateBackupRef(backupRef)
+  const match = upstream.match(/^([^/]+)\/(.+)$/)
+  if (!match) throw new Error(`Current branch has no pushable upstream: ${upstream}`)
+  const [, remote, branch] = match
+  const result = await runGitChecked({ repoPath, args: ["push", "-f", remote, `${backupRef}:refs/heads/${branch}`] })
+  return (result.stdout || result.stderr).trim() || `Pushed ${backupRef} to ${upstream}`
+}
+
 export async function guardedResetBranchToBackup(repoPath: string, backupRef: string, confirmation: string): Promise<void> {
   validateBackupRef(backupRef)
   if (confirmation !== `reset to ${backupRef}`) throw new Error(`Confirmation must match: reset to ${backupRef}`)

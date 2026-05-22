@@ -54,6 +54,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   const config = await loadGitSurgeonConfig()
   const initialRepoPath = normalizeRepoPath(options.repoPath)
   let state: AppState = createInitialState(initialRepoPath)
+  const shouldIgnoreStartupTerminalReply = createStartupTerminalReplyFilter()
   const discoveredRepos = await discoverRepoFolders(homedir())
   const pickerPaths = await filterValidRepoPaths(uniquePaths([initialRepoPath, process.cwd(), ...discoveredRepos, ...(options.recentRepos ?? []), ...config.recentRepos].map(normalizeRepoPath)))
   if (initialRepoPath) void rememberRecentRepo(initialRepoPath).catch(() => {})
@@ -413,7 +414,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           mount(DashboardScreen(repository, state.exitPrompt ? "press esc again to exit" : undefined))
         }
       } catch (error) {
-        state = { ...state, screen: "repo-picker", error: error instanceof Error ? error.message : String(error) }
+        state = { ...state, screen: "repo-picker", error: userErrorMessage(error) }
         mount(RepoPickerScreen(filteredRepoPaths(pickerPaths, state.repoQuery), state.repoQuery, state.repoQueryCursor, state.selectedRepoIndex, state.error))
       }
     } else {
@@ -457,6 +458,8 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   }
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
+    if (shouldIgnoreStartupTerminalReply(key)) return
+
     if (state.screen === "repo-picker") {
       const nextState = handleRepoPickerKey(state, key, pickerPaths, enterDashboard, renderer.destroy.bind(renderer))
       if (nextState !== state) { state = nextState; void render() }
@@ -1192,6 +1195,29 @@ function visibleWindowStart(total: number, selectedIndex: number, scrollOffset: 
 
 function isTypableChar(key: KeyEvent): boolean {
   return !key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence >= " "
+}
+
+function createStartupTerminalReplyFilter(): (key: KeyEvent) => boolean {
+  const expiresAt = Date.now() + 3_000
+  let discarding = false
+
+  return (key: KeyEvent): boolean => {
+    if (Date.now() > expiresAt) return false
+    if (discarding) {
+      if (/^[A-Za-z~]$/.test(key.sequence)) discarding = false
+      return true
+    }
+    if (key.sequence === "[") {
+      discarding = true
+      return true
+    }
+    return false
+  }
+}
+
+function userErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replace(/\s+with exit code \d+/g, "")
 }
 
 function isTextEntryActive(state: AppState): boolean {

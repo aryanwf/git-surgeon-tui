@@ -382,9 +382,14 @@ function printUsage(): void {
 
 if (import.meta.main) {
   main(Bun.argv.slice(2)).catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error))
+    console.error(userErrorMessage(error))
     process.exit(1)
   })
+}
+
+function userErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replace(/\s+with exit code \d+/g, "")
 }
 
 export { renameOldCommitMessages } from "./git/reword"

@@ -9,6 +9,7 @@ export function createInitialState(repoPath?: string): AppState {
     repoQuery: "",
     repoQueryCursor: 0,
     selectedRepoIndex: 0,
+    selectedRecoveryBackupIndex: 0,
     exitPrompt: false,
     historyQuery: "",
     historyQueryCursor: 0,
@@ -68,6 +69,7 @@ export function startAuthorFlow(state: AppState, commit: CommitSummary): AppStat
 }
 
 export function startDateFlow(state: AppState, commit: CommitSummary): AppState {
+  const dateParts = parseDateParts(commit.authorDate)
   const flow: RewriteDateState = {
     type: "date",
     step: "form",
@@ -76,11 +78,51 @@ export function startDateFlow(state: AppState, commit: CommitSummary): AppState 
     selectedAuthorDate: commit.authorDate,
     selectedCommitterDate: commit.committerDate,
     mode: "both",
-    activeField: "date",
-    newDate: commit.authorDate,
-    newDateCursor: commit.authorDate.length,
+    activeField: "year",
+    dateYear: dateParts.year,
+    dateYearCursor: dateParts.year.length,
+    dateMonth: dateParts.month,
+    dateMonthCursor: dateParts.month.length,
+    dateDay: dateParts.day,
+    dateDayCursor: dateParts.day.length,
+    dateHour: dateParts.hour,
+    dateHourCursor: dateParts.hour.length,
+    dateMinute: dateParts.minute,
+    dateMinuteCursor: dateParts.minute.length,
+    dateSecond: dateParts.second,
+    dateSecondCursor: dateParts.second.length,
+    timezone: dateParts.timezone,
   }
   return { ...state, screen: "rewrite-date", rewriteFlow: flow }
+}
+
+function parseDateParts(value: string): { year: string; month: string; day: string; hour: string; minute: string; second: string; timezone: string } {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})$/)
+  if (match) {
+    return {
+      year: match[1],
+      month: match[2],
+      day: match[3],
+      hour: match[4],
+      minute: match[5],
+      second: match[6],
+      timezone: match[7] === "Z" ? "Z" : `${match[7].slice(0, 3)}:${match[7].slice(-2)}`,
+    }
+  }
+
+  const fallback = new Date(value)
+  if (Number.isNaN(fallback.getTime())) {
+    return { year: "", month: "", day: "", hour: "", minute: "", second: "", timezone: "Z" }
+  }
+  return {
+    year: String(fallback.getUTCFullYear()).padStart(4, "0"),
+    month: String(fallback.getUTCMonth() + 1).padStart(2, "0"),
+    day: String(fallback.getUTCDate()).padStart(2, "0"),
+    hour: String(fallback.getUTCHours()).padStart(2, "0"),
+    minute: String(fallback.getUTCMinutes()).padStart(2, "0"),
+    second: String(fallback.getUTCSeconds()).padStart(2, "0"),
+    timezone: "Z",
+  }
 }
 
 export function startHistoryListEditFlow(state: AppState): AppState {

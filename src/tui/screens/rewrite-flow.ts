@@ -312,6 +312,7 @@ export function ChangeDateFlowScreen(state: RepositoryState, flow: RewriteDateSt
 function DateFormScreen(state: RepositoryState, flow: RewriteDateState) {
   const modes: Array<"author" | "committer" | "both"> = ["author", "committer", "both"]
   const modeIndex = modes.indexOf(flow.mode)
+  const timezoneOptions = ["Z", "-12:00", "-08:00", "-05:00", "+00:00", "+01:00", "+05:30", "+08:00", "+09:00", "+12:00"]
 
   return AppFrame(
     "Change Commit Date",
@@ -323,7 +324,24 @@ function DateFormScreen(state: RepositoryState, flow: RewriteDateState) {
         Text({ content: `Current author date:    ${flow.selectedAuthorDate}`, fg: theme.muted }),
         Text({ content: `Current committer date: ${flow.selectedCommitterDate}`, fg: theme.muted }),
       ),
-      inputField("New date (ISO 8601 with timezone)", flow.newDate, flow.activeField === "date", flow.newDateCursor),
+      Box(
+        { flexDirection: "column", borderStyle: "single", borderColor: theme.border, padding: 1 },
+        Text({ content: "New date and time", fg: theme.accent }),
+        Box(
+          { flexDirection: "row", gap: 1 },
+          compactDateField("Year", flow.dateYear, flow.activeField === "year", flow.dateYearCursor),
+          compactDateField("Month", flow.dateMonth, flow.activeField === "month", flow.dateMonthCursor),
+          compactDateField("Day", flow.dateDay, flow.activeField === "day", flow.dateDayCursor),
+        ),
+        Box(
+          { flexDirection: "row", gap: 1 },
+          compactDateField("Hour", flow.dateHour, flow.activeField === "hour", flow.dateHourCursor),
+          compactDateField("Minute", flow.dateMinute, flow.activeField === "minute", flow.dateMinuteCursor),
+          compactDateField("Second", flow.dateSecond, flow.activeField === "second", flow.dateSecondCursor),
+        ),
+        Text({ content: `Timezone: ${timezoneOptions.map((tz) => tz === flow.timezone ? `[${tz}]` : tz).join(" ")}`, fg: flow.activeField === "timezone" ? theme.accent : theme.muted }),
+        Text({ content: `Preview: ${formattedDateFromFlow(flow)}`, fg: theme.muted }),
+      ),
       Box(
         { flexDirection: "row", gap: 1 },
         Text({ content: "Mode: ", fg: theme.muted }),
@@ -335,9 +353,9 @@ function DateFormScreen(state: RepositoryState, flow: RewriteDateState) {
       ...(flow.error ? [Text({ content: `Error: ${flow.error}`, fg: theme.danger })] : []),
     ),
     KeyHelp([
-      ["type", "edit commit date"],
-      ["←/→", "move cursor or mode"],
-      ["tab", "switch field or mode"],
+      ["type", "edit selected box"],
+      ["tab", "next box"],
+      ["←/→", "move cursor or selector"],
       ["enter", "preview date change"],
       ["esc", "back to history"],
     ]),
@@ -799,6 +817,18 @@ function inputField(label: string, value: string, active: boolean, cursor?: numb
     Text({ content: label, fg: active ? theme.accent : theme.muted }),
     Text({ content: editableText(value, active, cursor), fg: theme.text }),
   )
+}
+
+function compactDateField(label: string, value: string, active: boolean, cursor?: number) {
+  return Box(
+    { flexDirection: "column", borderStyle: "single", borderColor: active ? theme.accent : theme.border, padding: 1, flexGrow: 1 },
+    Text({ content: label, fg: active ? theme.accent : theme.muted }),
+    Text({ content: editableText(value, active, cursor), fg: theme.text }),
+  )
+}
+
+function formattedDateFromFlow(flow: RewriteDateState): string {
+  return `${flow.dateYear}-${flow.dateMonth}-${flow.dateDay}T${flow.dateHour}:${flow.dateMinute}:${flow.dateSecond}${flow.timezone}`
 }
 
 function previewPanel(title: string, content: string, fg: string, limit: number) {

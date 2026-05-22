@@ -236,7 +236,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
               const result = await changeOldCommitDate({
                 repoPath: repository.repoPath,
                 sha: flow.selectedSha,
-                date: flow.newDate,
+                date: dateInputToIso(flow),
                 mode: flow.mode,
               })
               state = {
@@ -257,7 +257,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
               const result = await changeOldCommitDate({
                 repoPath: repository.repoPath,
                 sha: flow.selectedSha,
-                date: flow.newDate,
+                date: dateInputToIso(flow),
                 mode: flow.mode,
                 apply: true,
               })
@@ -688,12 +688,19 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
 
     if (flow.step === "form") {
       if (key.name === "return") {
-        state = { ...state, rewriteFlow: { ...flow, step: "preview", preview: undefined, error: undefined } }
+        try {
+          dateInputToIso(flow)
+          state = { ...state, rewriteFlow: { ...flow, step: "preview", preview: undefined, error: undefined } }
+        } catch (err) {
+          state = { ...state, rewriteFlow: { ...flow, error: err instanceof Error ? err.message : String(err) } }
+        }
         void render()
         return
       }
       if (key.name === "tab") {
-        state = { ...state, rewriteFlow: { ...flow, activeField: flow.activeField === "date" ? "mode" : "date" } }
+        const fields = ["year", "month", "day", "hour", "minute", "second", "timezone", "mode"] as const
+        const idx = fields.indexOf(flow.activeField)
+        state = { ...state, rewriteFlow: { ...flow, activeField: fields[(idx + 1) % fields.length] } }
         void render()
         return
       }
@@ -711,9 +718,17 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         void render()
         return
       }
-      const edit = flow.activeField === "date" ? editText(flow.newDate, flow.newDateCursor, key) : undefined
+      if (flow.activeField === "timezone" && (key.name === "left" || key.name === "right")) {
+        const timezones = ["Z", "-12:00", "-08:00", "-05:00", "+00:00", "+01:00", "+05:30", "+08:00", "+09:00", "+12:00"]
+        const idx = Math.max(0, timezones.indexOf(flow.timezone))
+        const direction = key.name === "left" ? -1 : 1
+        state = { ...state, rewriteFlow: { ...flow, timezone: timezones[(idx + direction + timezones.length) % timezones.length] } }
+        void render()
+        return
+      }
+      const edit = editDateInputField(flow, key)
       if (edit) {
-        state = { ...state, rewriteFlow: { ...flow, newDate: edit.value, newDateCursor: edit.cursor } }
+        state = { ...state, rewriteFlow: edit }
         void render()
         return
       }
@@ -1181,7 +1196,7 @@ function isTextEntryActive(state: AppState): boolean {
 
   if (flow.type === "reword") return flow.step === "form"
   if (flow.type === "author") return flow.step === "form" && flow.activeField !== "mode"
-  if (flow.type === "date") return flow.step === "form" && flow.activeField === "date"
+  if (flow.type === "date") return flow.step === "form" && ["year", "month", "day", "hour", "minute", "second"].includes(flow.activeField)
   if (flow.type === "history-list") return (flow.step === "form" && flow.activeField !== "list") || flow.step === "upstream-confirm"
   if (flow.type === "split") return flow.step === "form" && flow.activeField === "message"
   if (flow.type === "visual-rebase") return flow.step === "form" && flow.activeField !== "list"
@@ -1201,6 +1216,35 @@ function editText(value: string, cursor: number | undefined, key: KeyEvent): { v
   if (key.name === "delete") return { value: `${value.slice(0, index)}${value.slice(index + 1)}`, cursor: index }
   if (isTypableChar(key)) return { value: `${value.slice(0, index)}${key.sequence}${value.slice(index)}`, cursor: index + key.sequence.length }
   return undefined
+}
+
+function dateInputToIso(flow: RewriteDateState): string {
+  const value = `${flow.dateYear}-${flow.dateMonth}-${flow.dateDay}T${flow.dateHour}:${flow.dateMinute}:${flow.dateSecond}${flow.timezone}`
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    throw new Error("Enter a complete date/time and choose a timezone")
+  }
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) throw new Error("Date/time is not valid")
+  return value
+}
+
+function editDateInputField(flow: RewriteDateState, key: KeyEvent): RewriteDateState | undefined {
+  if (flow.activeField === "mode" || flow.activeField === "timezone") return undefined
+  const field = flow.activeField
+  const valueKey = `date${capitalizeDateField(field)}` as const
+  const cursorKey = `${valueKey}Cursor` as const
+  const edit = editText(flow[valueKey], flow[cursorKey], key)
+  if (!edit) return undefined
+  return { ...flow, [valueKey]: edit.value, [cursorKey]: edit.cursor }
+}
+
+function capitalizeDateField(field: "year" | "month" | "day" | "hour" | "minute" | "second"): "Year" | "Month" | "Day" | "Hour" | "Minute" | "Second" {
+  if (field === "year") return "Year"
+  if (field === "month") return "Month"
+  if (field === "day") return "Day"
+  if (field === "hour") return "Hour"
+  if (field === "minute") return "Minute"
+  return "Second"
 }
 
 function backState(state: AppState): AppState {

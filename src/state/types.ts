@@ -107,9 +107,20 @@ export type RewriteDateState = {
   selectedCommitterDate: string
   // editable inputs
   mode: "author" | "committer" | "both"
-  activeField: "mode" | "date"
-  newDate: string
-  newDateCursor: number
+  activeField: "mode" | "year" | "month" | "day" | "hour" | "minute" | "second" | "timezone"
+  dateYear: string
+  dateYearCursor: number
+  dateMonth: string
+  dateMonthCursor: number
+  dateDay: string
+  dateDayCursor: number
+  dateHour: string
+  dateHourCursor: number
+  dateMinute: string
+  dateMinuteCursor: number
+  dateSecond: string
+  dateSecondCursor: number
+  timezone: string
   // populated after scratch run
   preview?: ChangeCommitDatePreview
   backupRef?: string
@@ -220,6 +231,7 @@ export type AppState = {
   repoQuery: string
   repoQueryCursor: number
   selectedRepoIndex: number
+  selectedRecoveryBackupIndex: number
   exitPrompt: boolean
   historyQuery: string
   historyQueryCursor: number

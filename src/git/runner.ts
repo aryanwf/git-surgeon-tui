@@ -26,7 +26,7 @@ export class GitCommandError extends Error {
     message: string,
     readonly result: GitCommandResult,
   ) {
-    super(message)
+    super(message.replace(/\s*(?:failed\s+)?with exit code\s*\d+/gi, "").trimEnd())
     this.name = "GitCommandError"
   }
 }

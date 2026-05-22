@@ -6,17 +6,21 @@ Built with Bun, TypeScript, and OpenTUI. Every destructive operation is previewe
 
 ## Features
 
-- Interactive TUI for browsing history and planning rewrites
-- Reword commit messages anywhere in history
-- Change author and committer dates on any commit
-- Drop a single commit cleanly
-- Split a commit into multiple commits by path
-- Visual interactive rebase (pick, reword, edit, squash, fixup, drop, exec)
-- Repository size analyzer (native or `git filter-repo`)
-- Operation reports exported to disk
-- Automatic backup refs and operation logs for every rewrite
-- Preview-by-default: nothing is applied without `--apply`
-- Scriptable CLI for every TUI action
+- Auto-detect local Git repositories
+- Works over SSH and remote terminals
+- Edit commit messages
+- Change commit author name and email
+- Edit commit date and time
+- Delete commits from history
+- Split commits into smaller commits
+- Interactive visual rebase
+- Edit multiple commits at once
+- Repository size analysis
+- Automatic backups before changes
+- Preview diffs before applying changes
+- Direct `.git` folder operations
+- Simple terminal UI
+- Recovery support for reverted changes
 
 ## Install
 

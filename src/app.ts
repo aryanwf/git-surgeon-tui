@@ -1198,26 +1198,34 @@ function isTypableChar(key: KeyEvent): boolean {
 }
 
 function createStartupTerminalReplyFilter(): (key: KeyEvent) => boolean {
-  const expiresAt = Date.now() + 3_000
-  let discarding = false
+  const startedAt = Date.now()
+  const hardWindowMs = 1_500
+  const tailWindowMs = 4_000
+  let tailDiscarding = false
 
   return (key: KeyEvent): boolean => {
-    if (Date.now() > expiresAt) return false
-    if (discarding) {
-      if (/^[A-Za-z~]$/.test(key.sequence)) discarding = false
+    const elapsed = Date.now() - startedAt
+    if (elapsed < hardWindowMs) return true
+    if (elapsed > tailWindowMs) return false
+
+    if (tailDiscarding) {
+      if (/^[A-Za-z~]$/.test(key.sequence)) tailDiscarding = false
       return true
     }
+    if (key.name === "escape") return true
+    if (key.sequence.length > 1) return true
     if (key.sequence === "[") {
-      discarding = true
+      tailDiscarding = true
       return true
     }
+    if (/^[0-9;?$"' ]$/.test(key.sequence)) return true
     return false
   }
 }
 
 function userErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/\s+with exit code \d+/g, "")
+  return message.replace(/\s*(?:failed\s+)?with exit code\s*\d+/gi, "").replace(/\s+$/g, "")
 }
 
 function isTextEntryActive(state: AppState): boolean {

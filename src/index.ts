@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { renameOldCommitMessages, type RenameCommitMessage } from "./git/reword"
 import { dropSingleCommit } from "./git/drop"
 import { splitSingleCommit, type SplitCommitPart } from "./git/split"

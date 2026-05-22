@@ -7,6 +7,7 @@ import { visualInteractiveRebase, type VisualRebaseRow } from "./git/rebase"
 import { changeOldCommitDate, type DateChangeMode } from "./git/date"
 import { analyzeRepositorySize, type SizeAnalyzerMethod, type SizeAnalyzerSort, type SizeAnalyzerStatus } from "./git/size-analyzer"
 import { exportLatestOperationReport } from "./git/report"
+import { stripExitCodeText } from "./git/runner"
 import { runGitSurgeonTui } from "./app"
 
 type CliOptions = {
@@ -389,7 +390,7 @@ if (import.meta.main) {
 
 function userErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/\s+with exit code \d+/g, "")
+  return stripExitCodeText(message)
 }
 
 export { renameOldCommitMessages } from "./git/reword"

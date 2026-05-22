@@ -26,7 +26,7 @@ export class GitCommandError extends Error {
     message: string,
     readonly result: GitCommandResult,
   ) {
-    super(message.replace(/\s*(?:failed\s+)?with exit code\s*\d+/gi, "").trimEnd())
+    super(stripExitCodeText(message))
     this.name = "GitCommandError"
   }
 }
@@ -97,6 +97,15 @@ export async function runGitChecked(command: GitCommand): Promise<GitCommandResu
     throw new GitCommandError(`git ${result.args.join(" ")} failed`, result)
   }
   return result
+}
+
+export function stripExitCodeText(message: string): string {
+  return message
+    .replace(/\s*(?:failed\s+)?with\s+exit\s+code\s*[:#]?\s*-?\d+/gi, "")
+    .replace(/\s*\(?\s*exit\s+code\s*[:#]?\s*-?\d+\s*\)?/gi, "")
+    .replace(/\s*\(\s*code\s*[:#]?\s*-?\d+\s*\)/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
 }
 
 async function readStream(stream: ReadableStream<Uint8Array>, onChunk?: (chunk: string) => void): Promise<string> {

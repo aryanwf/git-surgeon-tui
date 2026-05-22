@@ -14,7 +14,7 @@ import { validateRepository } from "./git/repository"
 import { exportLatestOperationReport } from "./git/report"
 import { createRecoveryBranch, getRecoveryReport, previewBackupApplyToUpstream, pushBackupToUpstream } from "./git/recovery"
 import { renameOldCommitMessages } from "./git/reword"
-import { runGitChecked } from "./git/runner"
+import { runGitChecked, stripExitCodeText } from "./git/runner"
 import { discoverRepoFolders, filterValidRepoPaths } from "./git/repo-search"
 import { analyzeRepositorySize } from "./git/size-analyzer"
 import { getSplitCommitDetails, splitSingleCommit, type SplitCommitPart } from "./git/split"
@@ -115,7 +115,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             } catch (err) {
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "form", error: err instanceof Error ? err.message : String(err) },
+                rewriteFlow: { ...flow, step: "form", error: userErrorMessage(err) },
               }
             }
             void render()
@@ -136,7 +136,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             } catch (err) {
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) },
+                rewriteFlow: { ...flow, step: "result", error: userErrorMessage(err) },
               }
             }
             void render()
@@ -150,7 +150,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
               const plan = await buildDropCommitPlan(repository.repoPath, flow.selectedSha)
               state = { ...state, rewriteFlow: { ...flow, descendants: plan.descendants, changedCommitCount: plan.changedCommitCount, error: undefined } }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, planError: true, error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, planError: true, error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -165,7 +165,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             } catch (err) {
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "confirm", error: err instanceof Error ? err.message : String(err) },
+                rewriteFlow: { ...flow, step: "confirm", error: userErrorMessage(err) },
               }
             }
             void render()
@@ -182,7 +182,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             } catch (err) {
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) },
+                rewriteFlow: { ...flow, step: "result", error: userErrorMessage(err) },
               }
             }
             void render()
@@ -207,7 +207,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             } catch (err) {
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "warning", error: err instanceof Error ? err.message : String(err) },
+                rewriteFlow: { ...flow, step: "warning", error: userErrorMessage(err) },
               }
             }
             void render()
@@ -231,7 +231,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             } catch (err) {
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) },
+                rewriteFlow: { ...flow, step: "result", error: userErrorMessage(err) },
               }
             }
             void render()
@@ -255,7 +255,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             } catch (err) {
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "form", error: err instanceof Error ? err.message : String(err) },
+                rewriteFlow: { ...flow, step: "form", error: userErrorMessage(err) },
               }
             }
             void render()
@@ -278,7 +278,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
             } catch (err) {
               state = {
                 ...state,
-                rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) },
+                rewriteFlow: { ...flow, step: "result", error: userErrorMessage(err) },
               }
             }
             void render()
@@ -298,7 +298,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
               const result = await editCommitHistory({ repoPath: repository.repoPath, operations: toHistoryEditOperations(flow) })
               state = { ...state, rewriteFlow: { ...flow, preview: result.preview, operationLogPath: result.operationLogPath, error: undefined } }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, step: "form", error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, step: "form", error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -309,7 +309,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
               const push = await pushForce(repository.repoPath)
               state = { ...state, rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined } }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, step: "result", error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -322,7 +322,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
               const details = await getSplitCommitDetails(repository.repoPath, flow.selectedSha)
               state = { ...state, rewriteFlow: initializeSplitFlowPaths(flow, details.changedPaths) }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -332,7 +332,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
               const result = await splitSingleCommit({ repoPath: repository.repoPath, sha: flow.selectedSha, parts: toSplitCommitParts(flow) })
               state = { ...state, rewriteFlow: { ...flow, preview: result.preview, error: undefined } }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, step: "form", error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, step: "form", error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -346,7 +346,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
               }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, step: "result", error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -371,7 +371,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 },
               }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -385,7 +385,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
               })
               state = { ...state, rewriteFlow: { ...flow, preview: result.preview, error: undefined } }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, step: "form", error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, step: "form", error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -404,7 +404,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
               }
             } catch (err) {
-              state = { ...state, rewriteFlow: { ...flow, step: "result", error: err instanceof Error ? err.message : String(err) } }
+              state = { ...state, rewriteFlow: { ...flow, step: "result", error: userErrorMessage(err) } }
             }
             void render()
             return
@@ -533,7 +533,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         state = { ...state, exportReportPath: result.outputPath, exportReportError: undefined, recoveryApplyPreview: undefined }
         return render()
       }).catch((error) => {
-        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error), recoveryApplyPreview: undefined }
+        state = { ...state, exportReportPath: undefined, exportReportError: userErrorMessage(error), recoveryApplyPreview: undefined }
         return render()
       })
       return
@@ -547,7 +547,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
         state = { ...state, exportReportPath: `Created recovery branch: ${branch}`, exportReportError: undefined, recoveryApplyPreview: undefined }
         return render()
       }).catch((error) => {
-        state = { ...state, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error), recoveryApplyPreview: undefined }
+        state = { ...state, exportReportPath: undefined, exportReportError: userErrorMessage(error), recoveryApplyPreview: undefined }
         return render()
       })
       return
@@ -575,7 +575,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           : { ...state, recoveryApplyPreview: undefined, exportReportPath: result.output, exportReportError: undefined }
         return render()
       }).catch((error) => {
-        state = { ...state, recoveryApplyPreview: undefined, exportReportPath: undefined, exportReportError: error instanceof Error ? error.message : String(error) }
+        state = { ...state, recoveryApplyPreview: undefined, exportReportPath: undefined, exportReportError: userErrorMessage(error) }
         return render()
       })
     }
@@ -660,7 +660,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           validateAuthorInput(flow.newName, flow.newEmail)
           state = { ...state, rewriteFlow: { ...flow, step: "warning", error: undefined } }
         } catch (err) {
-          state = { ...state, rewriteFlow: { ...flow, error: err instanceof Error ? err.message : String(err) } }
+          state = { ...state, rewriteFlow: { ...flow, error: userErrorMessage(err) } }
         }
         void render()
         return
@@ -731,7 +731,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           dateInputToIso(flow)
           state = { ...state, rewriteFlow: { ...flow, step: "preview", preview: undefined, error: undefined } }
         } catch (err) {
-          state = { ...state, rewriteFlow: { ...flow, error: err instanceof Error ? err.message : String(err) } }
+          state = { ...state, rewriteFlow: { ...flow, error: userErrorMessage(err) } }
         }
         void render()
         return
@@ -793,7 +793,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           state = { ...state, rewriteFlow: { ...flow, step: "preview", stashedRef: result.stdout.trim() || "stash@{0}", preview: undefined, error: undefined } }
           return render()
         }).catch((err) => {
-          state = { ...state, rewriteFlow: { ...flow, error: err instanceof Error ? err.message : String(err) } }
+          state = { ...state, rewriteFlow: { ...flow, error: userErrorMessage(err) } }
           return render()
         })
         return
@@ -1225,7 +1225,7 @@ function createStartupTerminalReplyFilter(): (key: KeyEvent) => boolean {
 
 function userErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/\s*(?:failed\s+)?with exit code\s*\d+/gi, "").replace(/\s+$/g, "")
+  return stripExitCodeText(message)
 }
 
 function isTextEntryActive(state: AppState): boolean {
@@ -1426,7 +1426,7 @@ async function pushForce(repoPath: string): Promise<{ pushOutput?: string; pushE
     const result = await runGitChecked({ cwd: repoPath, args: ["push", "-f"] })
     return { pushOutput: (result.stdout || result.stderr).trim() || "git push -f succeeded" }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = userErrorMessage(err)
     return { pushError: `git push -f failed: ${message}` }
   }
 }

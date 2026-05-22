@@ -1,6 +1,6 @@
 # Git Surgeon
 
-Safe, visual Git history surgery from a terminal UI.
+Advanced, visual Git history surgery from a terminal UI.
 
 Built with Bun, TypeScript, and OpenTUI. Every destructive operation is previewed first, backed by a safety ref, and logged before anything touches your repository.
 
@@ -19,7 +19,6 @@ Built with Bun, TypeScript, and OpenTUI. Every destructive operation is previewe
 - Automatic backups before changes
 - Preview diffs before applying changes
 - Direct `.git` folder operations
-- Simple terminal UI
 - Recovery support for reverted changes
 
 ## Install
@@ -46,12 +45,12 @@ bun src/index.ts tui
 Run directly from GitHub without cloning:
 
 ```bash
-bunx github:aryanwf/git-surgeon-tui tui --repo .
+bunx github:aryanwf/git-surgeon-tui tui
 ```
 
 Or use the CLI directly. Every command previews by default; add `--apply` to write.
 
-### Reword
+### Rename
 
 ```bash
 bun src/index.ts rename --repo <path> \
@@ -59,13 +58,13 @@ bun src/index.ts rename --repo <path> \
   [--message <sha>=<new message>] [--apply]
 ```
 
-### Drop
+### Delete 
 
 ```bash
 bun src/index.ts drop --repo <path> --sha <commit> [--apply]
 ```
 
-### Split
+### Split 
 
 ```bash
 bun src/index.ts split --repo <path> --sha <commit> \

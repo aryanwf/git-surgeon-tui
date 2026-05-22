@@ -94,7 +94,7 @@ export async function runGit(command: GitCommand): Promise<GitCommandResult> {
 export async function runGitChecked(command: GitCommand): Promise<GitCommandResult> {
   const result = await runGit(command)
   if (result.exitCode !== 0) {
-    throw new GitCommandError(`git ${result.args.join(" ")} failed with exit code ${result.exitCode}`, result)
+    throw new GitCommandError(`git ${result.args.join(" ")} failed`, result)
   }
   return result
 }

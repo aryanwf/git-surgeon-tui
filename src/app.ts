@@ -1,8 +1,6 @@
 import { createCliRenderer, type KeyEvent } from "@opentui/core"
-import type { Dirent } from "node:fs"
-import { readdir } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, join, resolve } from "node:path"
+import { basename, resolve } from "node:path"
 import { loadGitSurgeonConfig, rememberRecentRepo } from "./config"
 import { changeCommitAuthor, validateAuthorInput } from "./git/author"
 import { getConflictReport, rebaseAbort, rebaseContinue, rebaseSkip } from "./git/conflict"
@@ -17,6 +15,7 @@ import { exportLatestOperationReport } from "./git/report"
 import { createRecoveryBranch, getRecoveryReport, previewBackupApplyToUpstream, pushBackupToUpstream } from "./git/recovery"
 import { renameOldCommitMessages } from "./git/reword"
 import { runGitChecked } from "./git/runner"
+import { discoverRepoFolders, filterValidRepoPaths } from "./git/repo-search"
 import { analyzeRepositorySize } from "./git/size-analyzer"
 import { getSplitCommitDetails, splitSingleCommit, type SplitCommitPart } from "./git/split"
 import { createInitialState, startAuthorFlow, startDateFlow, startDropFlow, startHistoryListEditFlow, startRewordFlow, startSplitFlow, startVisualRebaseFlow } from "./state/store"
@@ -56,7 +55,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
   const initialRepoPath = normalizeRepoPath(options.repoPath)
   let state: AppState = createInitialState(initialRepoPath)
   const discoveredRepos = await discoverRepoFolders(homedir())
-  const pickerPaths = uniquePaths([initialRepoPath, process.cwd(), ...discoveredRepos, ...(options.recentRepos ?? []), ...config.recentRepos].map(normalizeRepoPath))
+  const pickerPaths = await filterValidRepoPaths(uniquePaths([initialRepoPath, process.cwd(), ...discoveredRepos, ...(options.recentRepos ?? []), ...config.recentRepos].map(normalizeRepoPath)))
   if (initialRepoPath) void rememberRecentRepo(initialRepoPath).catch(() => {})
 
   const render = async () => {
@@ -1113,41 +1112,6 @@ function uniquePaths(paths: (string | undefined)[]): string[] {
 
 function normalizeRepoPath(repoPath: string | undefined): string | undefined {
   return repoPath ? resolve(repoPath) : undefined
-}
-
-async function discoverRepoFolders(rootPath: string): Promise<string[]> {
-  const repos: string[] = []
-  const queue: Array<{ path: string; depth: number }> = [{ path: rootPath, depth: 0 }]
-  const maxDepth = 6
-  const maxRepos = 500
-
-  while (queue.length > 0 && repos.length < maxRepos) {
-    const current = queue.shift()!
-    let entries: Dirent[]
-    try {
-      entries = await readdir(current.path, { withFileTypes: true })
-    } catch {
-      continue
-    }
-
-    if (entries.some((entry) => entry.name === ".git" && (entry.isDirectory() || entry.isFile()))) {
-      repos.push(current.path)
-      continue
-    }
-
-    if (current.depth >= maxDepth) continue
-
-    for (const entry of entries) {
-      if (!entry.isDirectory() || shouldSkipRepoSearchDir(entry.name)) continue
-      queue.push({ path: join(current.path, entry.name), depth: current.depth + 1 })
-    }
-  }
-
-  return repos
-}
-
-function shouldSkipRepoSearchDir(name: string): boolean {
-  return name.startsWith(".") || ["node_modules", "vendor", "dist", "build", "target", "Library"].includes(name)
 }
 
 function filteredRepoPaths(paths: string[], query: string): string[] {

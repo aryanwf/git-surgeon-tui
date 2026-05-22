@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { resolve } from "node:path"
+import { isAbsolute, resolve } from "node:path"
 import { renameOldCommitMessages, type RenameCommitMessage } from "./git/reword"
 import { dropSingleCommit } from "./git/drop"
 import { splitSingleCommit, type SplitCommitPart } from "./git/split"
@@ -198,7 +198,13 @@ function assertInteractiveTerminal(): void {
 }
 
 function resolveRepoArg(repoPath: string | undefined): string | undefined {
-  return repoPath ? resolve(repoPath) : undefined
+  if (!repoPath) return undefined
+  if (isAbsolute(repoPath)) return repoPath
+  return resolve(invocationCwd(), repoPath)
+}
+
+function invocationCwd(): string {
+  return process.env.INIT_CWD || process.env.PWD || process.cwd()
 }
 
 function parseDropArgs(args: string[]): CliOptions {

@@ -128,7 +128,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 messages: [{ sha: flow.selectedSha, message: flow.newMessage }],
                 apply: true,
               })
-              const push = await pushForce(repository.repoPath)
+              const push = await pushForce(repository.repoPath, repository.upstream)
               state = {
                 ...state,
                 rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
@@ -174,7 +174,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           if (flow.step === "applying") {
             try {
               const result = await dropSingleCommit({ repoPath: repository.repoPath, sha: flow.selectedSha, apply: true })
-              const push = await pushForce(repository.repoPath)
+              const push = await pushForce(repository.repoPath, repository.upstream)
               state = {
                 ...state,
                 rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
@@ -223,7 +223,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 mode: flow.mode,
                 apply: true,
               })
-              const push = await pushForce(repository.repoPath)
+              const push = await pushForce(repository.repoPath, repository.upstream)
               state = {
                 ...state,
                 rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
@@ -270,7 +270,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 mode: flow.mode,
                 apply: true,
               })
-              const push = await pushForce(repository.repoPath)
+              const push = await pushForce(repository.repoPath, repository.upstream)
               state = {
                 ...state,
                 rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
@@ -306,7 +306,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           if (flow.step === "applying") {
             try {
               const result = await editCommitHistory({ repoPath: repository.repoPath, operations: toHistoryEditOperations(flow), apply: true })
-              const push = await pushForce(repository.repoPath)
+              const push = await pushForce(repository.repoPath, repository.upstream)
               state = { ...state, rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined } }
             } catch (err) {
               state = { ...state, rewriteFlow: { ...flow, step: "result", error: userErrorMessage(err) } }
@@ -340,7 +340,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
           if (flow.step === "applying") {
             try {
               const result = await splitSingleCommit({ repoPath: repository.repoPath, sha: flow.selectedSha, parts: toSplitCommitParts(flow), apply: true })
-              const push = await pushForce(repository.repoPath)
+              const push = await pushForce(repository.repoPath, repository.upstream)
               state = {
                 ...state,
                 rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
@@ -398,7 +398,7 @@ export async function runGitSurgeonTui(options: RunTuiOptions = {}): Promise<voi
                 rows: toVisualRebaseRows(flow),
                 apply: true,
               })
-              const push = await pushForce(repository.repoPath)
+              const push = await pushForce(repository.repoPath, repository.upstream)
               state = {
                 ...state,
                 rewriteFlow: { ...flow, step: "result", backupRef: result.backupRef, operationLogPath: result.operationLogPath, pushOutput: push.pushOutput, pushError: push.pushError, error: undefined },
@@ -1199,8 +1199,8 @@ function isTypableChar(key: KeyEvent): boolean {
 
 function createStartupTerminalReplyFilter(): (key: KeyEvent) => boolean {
   const startedAt = Date.now()
-  const hardWindowMs = 1_500
-  const tailWindowMs = 4_000
+  const hardWindowMs = 1
+  const tailWindowMs = 1
   let tailDiscarding = false
 
   return (key: KeyEvent): boolean => {
@@ -1421,13 +1421,17 @@ function toHistoryEditOperations(flow: HistoryListEditState): HistoryEditOperati
   })
 }
 
-async function pushForce(repoPath: string): Promise<{ pushOutput?: string; pushError?: string }> {
+async function pushForce(repoPath: string, upstream?: string): Promise<{ pushOutput?: string; pushError?: string }> {
+  if (!upstream) return { pushError: "No upstream remote configured; local rewrite applied but not pushed" }
+  const match = upstream.match(/^([^/]+)\/(.+)$/)
+  if (!match) return { pushError: `Current branch has no pushable upstream: ${upstream}` }
+  const [, remote, branch] = match
   try {
-    const result = await runGitChecked({ cwd: repoPath, args: ["push", "-f"] })
-    return { pushOutput: (result.stdout || result.stderr).trim() || "git push -f succeeded" }
+    const result = await runGitChecked({ repoPath, args: ["push", "--force-with-lease", remote, `HEAD:refs/heads/${branch}`] })
+    return { pushOutput: (result.stdout || result.stderr).trim() || `Pushed HEAD to ${upstream}` }
   } catch (err) {
     const message = userErrorMessage(err)
-    return { pushError: `git push -f failed: ${message}` }
+    return { pushError: `git push --force-with-lease failed: ${message}` }
   }
 }
 

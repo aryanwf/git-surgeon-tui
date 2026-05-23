@@ -1,11 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises"
-import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { runGit, runGitChecked, GitCommandError, type GitCommandResult } from "./runner"
+import { runGitChecked, type GitCommandResult } from "./runner"
 import { getHeadCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
-import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog, type OperationLog } from "./safety"
+import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog } from "./safety"
 import { buildHistoryPreview, historyRange, type HistoryPreview } from "./preview"
 
 export type RenameCommitMessage = {
@@ -159,82 +158,61 @@ async function previewRename(repoPath: string, plan: RewritePlan, warnings: stri
 }
 
 async function executeRenameRewrite(repoPath: string, plan: RewritePlan): Promise<{ commands: GitCommandResult[]; rewrittenCommits: string[] }> {
-  const helperDir = await mkdtemp(join(tmpdir(), "gitsurgeon-reword-"))
-  const todoPath = join(helperDir, "todo")
-  const editorPath = join(helperDir, "sequence-editor.sh")
   const commands: GitCommandResult[] = []
-  const rewrittenCommits: string[] = []
   const selectedBySha = new Map(plan.selected.map((selected) => [selected.sha, selected]))
+  const rewrittenBySha = new Map<string, string>()
+  let previousNew = plan.root ? undefined : plan.baseCommit
 
-  try {
-    await Bun.write(todoPath, plan.todo)
-    await Bun.write(editorPath, `#!/bin/sh\ncp "${todoPath}" "$1"\n`)
-    await runGitChecked({ args: ["update-index", "--refresh"], repoPath })
-    await Bun.spawn(["chmod", "+x", editorPath]).exited
+  for (const commit of plan.rangeCommits) {
+    const selected = selectedBySha.get(commit.sha)
+    const treeResult = await runGitChecked({ repoPath, args: ["rev-parse", `${commit.sha}^{tree}`] })
+    commands.push(treeResult)
+    const message = selected ? selected.message : await commitMessage(repoPath, commit.sha, commands)
+    const args = ["commit-tree", treeResult.stdout.trim()]
+    if (previousNew) args.push("-p", previousNew)
 
-    const rebaseArgs = plan.root ? ["rebase", "-i", "--root"] : ["rebase", "-i", plan.baseCommit!]
-    const rebaseStart = await runGit({ repoPath, args: rebaseArgs, env: { GIT_SEQUENCE_EDITOR: editorPath }, timeoutMs: 120_000 })
-    commands.push(rebaseStart)
-    if (rebaseStart.exitCode !== 0 && !(await isRebaseInProgress(repoPath))) throw new GitCommandError("Interactive rebase failed to start", rebaseStart)
-
-    for (const commit of plan.rangeCommits) {
-      if (!(await isRebaseInProgress(repoPath))) break
-      const selected = selectedBySha.get(commit.sha)
-      const amendArgs = await renameAmendArgs(helperDir, commit, selected)
-      const amend = await runGit({ repoPath, args: amendArgs, env: amendEnv(commit), timeoutMs: 120_000 })
-      commands.push(amend)
-      if (amend.exitCode !== 0) throw new GitCommandError("Commit amend failed during rename flow", amend)
-      if (selected) rewrittenCommits.push((await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim())
-
-      const cont = await runGit({ repoPath, args: ["rebase", "--continue"], env: { GIT_EDITOR: ":" }, timeoutMs: 120_000 })
-      commands.push(cont)
-      if (cont.exitCode !== 0 && (await hasConflicts(repoPath))) {
-        throw new GitCommandError("Rebase stopped with conflicts", cont)
-      }
-      if (cont.exitCode !== 0 && (await isRebaseInProgress(repoPath))) {
-        throw new GitCommandError("Rebase continue failed", cont)
-      }
-    }
-
-    if (await isRebaseInProgress(repoPath)) {
-      const cont = await runGit({ repoPath, args: ["rebase", "--continue"], env: { GIT_EDITOR: ":" }, timeoutMs: 120_000 })
-      commands.push(cont)
-      if (cont.exitCode !== 0) throw new GitCommandError("Final rebase continue failed", cont)
-    }
-
-    return { commands, rewrittenCommits }
-  } finally {
-    await rm(helperDir, { recursive: true, force: true })
+    const built = await runGitChecked({ repoPath, args, env: commitEnv(commit), stdin: message })
+    commands.push(built)
+    const newSha = built.stdout.trim()
+    if (selected) rewrittenBySha.set(selected.sha, newSha)
+    previousNew = newSha
   }
+
+  if (!previousNew) throw new Error("Rename rewrite produced no commits")
+  await updateHead(repoPath, previousNew, commands, "gitsurgeon: rename-commit-messages")
+  return { commands, rewrittenCommits: plan.selected.flatMap((selected) => rewrittenBySha.get(selected.sha) ?? []) }
 }
 
-async function renameAmendArgs(helperDir: string, commit: CommitSummary, selected?: SelectedRename): Promise<string[]> {
-  if (!selected) return ["commit", "--amend", "--no-edit"]
-
-  const messagePath = join(helperDir, `${commit.sha}.message`)
-  await Bun.write(messagePath, selected.message)
-  const args = ["commit", "--amend", "-F", messagePath]
-  if (selected.message === "") args.push("--allow-empty-message")
-  return args
+async function commitMessage(repoPath: string, sha: string, commands: GitCommandResult[]): Promise<string> {
+  const result = await runGitChecked({ repoPath, args: ["log", "-1", "--format=%B", sha] })
+  commands.push(result)
+  return result.stdout
 }
 
-function amendEnv(commit: CommitSummary): Record<string, string> {
+function commitEnv(commit: CommitSummary): Record<string, string> {
   return {
+    GIT_AUTHOR_NAME: commit.authorName,
+    GIT_AUTHOR_EMAIL: commit.authorEmail,
+    GIT_AUTHOR_DATE: commit.authorDate,
     GIT_COMMITTER_NAME: commit.committerName,
     GIT_COMMITTER_EMAIL: commit.committerEmail,
     GIT_COMMITTER_DATE: commit.committerDate,
   }
 }
 
-async function isRebaseInProgress(repoPath: string): Promise<boolean> {
-  const mergePath = (await runGitChecked({ repoPath, args: ["rev-parse", "--path-format=absolute", "--git-path", "rebase-merge"] })).stdout.trim()
-  const applyPath = (await runGitChecked({ repoPath, args: ["rev-parse", "--path-format=absolute", "--git-path", "rebase-apply"] })).stdout.trim()
-  return existsSync(mergePath) || existsSync(applyPath)
-}
-
-async function hasConflicts(repoPath: string): Promise<boolean> {
-  const result = await runGitChecked({ repoPath, args: ["diff", "--name-only", "--diff-filter=U"] })
-  return result.stdout.trim() !== ""
+async function updateHead(repoPath: string, newHead: string, commands: GitCommandResult[], reason: string): Promise<void> {
+  const refResult = await runGitChecked({ repoPath, args: ["rev-parse", "--symbolic-full-name", "HEAD"] })
+  commands.push(refResult)
+  const headRef = refResult.stdout.trim()
+  const oldHeadResult = await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })
+  commands.push(oldHeadResult)
+  const updateArgs = headRef && headRef !== "HEAD"
+    ? ["update-ref", "-m", reason, headRef, newHead, oldHeadResult.stdout.trim()]
+    : ["update-ref", "--no-deref", "-m", reason, "HEAD", newHead, oldHeadResult.stdout.trim()]
+  const update = await runGitChecked({ repoPath, args: updateArgs })
+  commands.push(update)
+  const reset = await runGitChecked({ repoPath, args: ["reset", "--hard", "HEAD"], timeoutMs: 120_000 })
+  commands.push(reset)
 }
 
 function publicHistoryWarnings(upstream?: string): string[] {

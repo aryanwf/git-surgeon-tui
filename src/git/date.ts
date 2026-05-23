@@ -1,10 +1,9 @@
-import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getHeadCommits, type CommitSummary } from "./log"
 import { assertRewriteReady, validateRepository } from "./repository"
-import { GitCommandError, runGit, runGitChecked, type GitCommandResult } from "./runner"
+import { runGitChecked, type GitCommandResult } from "./runner"
 import { buildOperationLog, commandLine, createBackupRef, timestampForRef, writeOperationLog } from "./safety"
 import { buildHistoryPreview, historyRange, type HistoryPreview } from "./preview"
 
@@ -153,67 +152,72 @@ async function previewChangeCommitDate(repoPath: string, plan: ChangeCommitDateP
 }
 
 async function executeChangeCommitDateRewrite(repoPath: string, plan: ChangeCommitDatePlan): Promise<{ commands: GitCommandResult[]; newTargetSha: string }> {
-  const helperDir = await mkdtemp(join(tmpdir(), "gitsurgeon-date-"))
-  const todoPath = join(helperDir, "todo")
-  const editorPath = join(helperDir, "sequence-editor.sh")
   const commands: GitCommandResult[] = []
+  const commits = await getHeadCommits(repoPath)
+  const targetIndex = commits.findIndex((commit) => commit.sha === plan.target.sha)
+  if (targetIndex < 0) throw new Error(`Commit ${plan.target.sha} is not reachable from HEAD`)
+  const rangeCommits = commits.slice(targetIndex)
+  let previousNew = plan.root ? undefined : plan.baseCommit
+  let newTargetSha = ""
 
-  try {
-    await Bun.write(todoPath, plan.todo)
-    await Bun.write(editorPath, `#!/bin/sh\ncp ${shellQuote(todoPath)} "$1"\n`)
-    await runGitChecked({ args: ["update-index", "--refresh"], repoPath })
-    await Bun.spawn(["chmod", "+x", editorPath]).exited
+  for (const commit of rangeCommits) {
+    const isTarget = commit.sha === plan.target.sha
+    const treeResult = await runGitChecked({ repoPath, args: ["rev-parse", `${commit.sha}^{tree}`] })
+    commands.push(treeResult)
+    const message = await commitMessage(repoPath, commit.sha, commands)
+    const args = ["commit-tree", treeResult.stdout.trim()]
+    if (previousNew) args.push("-p", previousNew)
 
-    const rebaseArgs = plan.root ? ["rebase", "-i", "--root"] : ["rebase", "-i", plan.baseCommit!]
-    const rebaseStart = await runGit({ repoPath, args: rebaseArgs, env: { GIT_SEQUENCE_EDITOR: editorPath }, timeoutMs: 120_000 })
-    commands.push(rebaseStart)
-    if (rebaseStart.exitCode !== 0 && !(await isRebaseInProgress(repoPath))) throw new GitCommandError("Interactive rebase failed to start", rebaseStart)
-
-    const amend = await runGit({ repoPath, args: amendArgs(plan), env: amendEnv(plan), timeoutMs: 120_000 })
-    commands.push(amend)
-    if (amend.exitCode !== 0) throw new GitCommandError("Commit amend failed during date change flow", amend)
-    const newTargetSha = (await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })).stdout.trim()
-
-    const cont = await runGit({ repoPath, args: ["rebase", "--continue"], env: { GIT_EDITOR: ":" }, timeoutMs: 120_000 })
-    commands.push(cont)
-    if (cont.exitCode !== 0 && (await hasConflicts(repoPath))) throw new GitCommandError("Rebase stopped with conflicts", cont)
-    if (cont.exitCode !== 0 && (await isRebaseInProgress(repoPath))) throw new GitCommandError("Rebase continue failed", cont)
-
-    return { commands, newTargetSha }
-  } finally {
-    await rm(helperDir, { recursive: true, force: true })
+    const built = await runGitChecked({ repoPath, args, env: commitEnv(commit, plan, isTarget), stdin: message })
+    commands.push(built)
+    const newSha = built.stdout.trim()
+    if (isTarget) newTargetSha = newSha
+    previousNew = newSha
   }
+
+  if (!previousNew || !newTargetSha) throw new Error("Date rewrite produced no commits")
+  await updateHead(repoPath, previousNew, commands, "gitsurgeon: change-commit-date")
+  return { commands, newTargetSha }
 }
 
-function amendArgs(plan: ChangeCommitDatePlan): string[] {
-  const args = ["commit", "--amend", "--no-edit"]
-  if (plan.mode === "author" || plan.mode === "both") args.push(`--date=${plan.newDate}`)
-  return args
+async function commitMessage(repoPath: string, sha: string, commands: GitCommandResult[]): Promise<string> {
+  const result = await runGitChecked({ repoPath, args: ["log", "-1", "--format=%B", sha] })
+  commands.push(result)
+  return result.stdout
 }
 
-function amendEnv(plan: ChangeCommitDatePlan): Record<string, string> {
+function commitEnv(commit: CommitSummary, plan: ChangeCommitDatePlan, isTarget: boolean): Record<string, string> {
   const env = {
-    GIT_COMMITTER_NAME: plan.target.committerName,
-    GIT_COMMITTER_EMAIL: plan.target.committerEmail,
-    GIT_COMMITTER_DATE: plan.target.committerDate,
+    GIT_AUTHOR_NAME: commit.authorName,
+    GIT_AUTHOR_EMAIL: commit.authorEmail,
+    GIT_AUTHOR_DATE: commit.authorDate,
+    GIT_COMMITTER_NAME: commit.committerName,
+    GIT_COMMITTER_EMAIL: commit.committerEmail,
+    GIT_COMMITTER_DATE: commit.committerDate,
   }
+  if (!isTarget) return env
+  if (plan.mode === "author" || plan.mode === "both") env.GIT_AUTHOR_DATE = plan.newDate
   if (plan.mode === "committer" || plan.mode === "both") env.GIT_COMMITTER_DATE = plan.newDate
   return env
 }
 
+async function updateHead(repoPath: string, newHead: string, commands: GitCommandResult[], reason: string): Promise<void> {
+  const refResult = await runGitChecked({ repoPath, args: ["rev-parse", "--symbolic-full-name", "HEAD"] })
+  commands.push(refResult)
+  const headRef = refResult.stdout.trim()
+  const oldHeadResult = await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })
+  commands.push(oldHeadResult)
+  const updateArgs = headRef && headRef !== "HEAD"
+    ? ["update-ref", "-m", reason, headRef, newHead, oldHeadResult.stdout.trim()]
+    : ["update-ref", "--no-deref", "-m", reason, "HEAD", newHead, oldHeadResult.stdout.trim()]
+  const update = await runGitChecked({ repoPath, args: updateArgs })
+  commands.push(update)
+  const reset = await runGitChecked({ repoPath, args: ["reset", "--hard", "HEAD"], timeoutMs: 120_000 })
+  commands.push(reset)
+}
+
 async function verificationLog(repoPath: string): Promise<string> {
   return (await runGitChecked({ repoPath, args: ["log", "--format=%h %aI %cI %an <%ae> %cn <%ce> %s", "-n", "20"] })).stdout
-}
-
-async function isRebaseInProgress(repoPath: string): Promise<boolean> {
-  const mergePath = (await runGitChecked({ repoPath, args: ["rev-parse", "--path-format=absolute", "--git-path", "rebase-merge"] })).stdout.trim()
-  const applyPath = (await runGitChecked({ repoPath, args: ["rev-parse", "--path-format=absolute", "--git-path", "rebase-apply"] })).stdout.trim()
-  return existsSync(mergePath) || existsSync(applyPath)
-}
-
-async function hasConflicts(repoPath: string): Promise<boolean> {
-  const result = await runGitChecked({ repoPath, args: ["diff", "--name-only", "--diff-filter=U"] })
-  return result.stdout.trim() !== ""
 }
 
 function validateDateChangeMode(mode: string): asserts mode is DateChangeMode {
@@ -229,8 +233,4 @@ export function normalizeIsoDate(date: string): string {
 
 function publicHistoryWarnings(upstream?: string): string[] {
   return upstream ? [`Current branch tracks ${upstream}; rewriting published commits may require coordinated force-push later.`] : []
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`
 }

@@ -87,8 +87,47 @@ test("applies a batched list edit with rename plus drop plus date change", async
   expect(backupHead).toBe(oldHead)
 })
 
+test("renames commit messages without changing metadata or running commit hooks", async () => {
+  const { repoPath, commits } = await createFixtureRepo()
+  const oldMetadata = await allCommitMetadata(repoPath)
+  const hookPath = (await runGitChecked({ repoPath, args: ["rev-parse", "--git-path", "hooks/prepare-commit-msg"] })).stdout.trim()
+  await Bun.write(hookPath, "#!/bin/sh\nprintf '\\nCo-authored-by: Hook User <hook@example.com>\\n' >> \"$1\"\n")
+  await Bun.spawn(["chmod", "+x", hookPath]).exited
+
+  await editCommitHistory({
+    repoPath,
+    operations: [{ sha: commits[1], message: "renamed second commit" }],
+    apply: true,
+  })
+
+  const newMetadata = await allCommitMetadata(repoPath)
+  expect(newMetadata.map(withoutSubject)).toEqual(oldMetadata.map(withoutSubject))
+  expect(newMetadata.map((row) => row.subject)).toEqual(["first commit", "renamed second commit", "third commit"])
+  expect((await runGitChecked({ repoPath, args: ["log", "--format=%B"] })).stdout).not.toContain("Co-authored-by: Hook User")
+})
+
 async function commitDates(repoPath: string, ref: string, format: string): Promise<string> {
   return (await runGitChecked({ repoPath, args: ["show", "-s", `--format=${format}`, ref] })).stdout.trim()
+}
+
+async function allCommitMetadata(repoPath: string): Promise<Array<{ authorName: string; authorEmail: string; authorDate: string; committerName: string; committerEmail: string; committerDate: string; subject: string }>> {
+  const format = "%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%s%x1e"
+  const output = (await runGitChecked({ repoPath, args: ["log", "--reverse", `--format=${format}`] })).stdout
+  return output.split("\x1e").map((row) => row.trim()).filter(Boolean).map((row) => {
+    const [authorName, authorEmail, authorDate, committerName, committerEmail, committerDate, subject] = row.split("\x00")
+    return { authorName, authorEmail, authorDate, committerName, committerEmail, committerDate, subject }
+  })
+}
+
+function withoutSubject(row: Awaited<ReturnType<typeof allCommitMetadata>>[number]) {
+  return {
+    authorName: row.authorName,
+    authorEmail: row.authorEmail,
+    authorDate: row.authorDate,
+    committerName: row.committerName,
+    committerEmail: row.committerEmail,
+    committerDate: row.committerDate,
+  }
 }
 
 function fakeRepositoryState(): RepositoryState {

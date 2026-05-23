@@ -196,6 +196,8 @@ async function previewHistoryEdit(repoPath: string, plan: HistoryEditPlan, warni
 }
 
 async function executeHistoryEdit(repoPath: string, plan: HistoryEditPlan): Promise<{ commands: GitCommandResult[]; oldToNew: Record<string, string> }> {
+  if (!plan.edits.some((edit) => edit.drop)) return await executeHistoryEditByCommitTree(repoPath, plan)
+
   const helperDir = await mkdtemp(join(tmpdir(), "gitsurgeon-history-edit-"))
   const todoPath = join(helperDir, "todo")
   const editorPath = join(helperDir, "sequence-editor.sh")
@@ -259,12 +261,77 @@ async function amendArgs(helperDir: string, commit: CommitSummary, edit?: Planne
 
 function amendEnv(commit: CommitSummary, edit?: PlannedEdit): Record<string, string> {
   const env = {
+    GIT_AUTHOR_NAME: commit.authorName,
+    GIT_AUTHOR_EMAIL: commit.authorEmail,
+    GIT_AUTHOR_DATE: commit.authorDate,
     GIT_COMMITTER_NAME: commit.committerName,
     GIT_COMMITTER_EMAIL: commit.committerEmail,
     GIT_COMMITTER_DATE: commit.committerDate,
   }
+  if (edit?.date && (edit.dateMode === "author" || edit.dateMode === "both")) env.GIT_AUTHOR_DATE = edit.date
   if (edit?.date && (edit.dateMode === "committer" || edit.dateMode === "both")) env.GIT_COMMITTER_DATE = edit.date
   return env
+}
+
+async function executeHistoryEditByCommitTree(repoPath: string, plan: HistoryEditPlan): Promise<{ commands: GitCommandResult[]; oldToNew: Record<string, string> }> {
+  const commands: GitCommandResult[] = []
+  const oldToNew: Record<string, string> = {}
+  const editMap = new Map(plan.edits.map((edit) => [edit.sha, edit]))
+  let previousNew = plan.root ? undefined : plan.baseCommit
+
+  for (const commit of plan.rangeCommits) {
+    const edit = editMap.get(commit.sha)
+    const treeResult = await runGitChecked({ repoPath, args: ["rev-parse", `${commit.sha}^{tree}`] })
+    commands.push(treeResult)
+    const message = edit?.message !== undefined ? edit.message : await commitMessage(repoPath, commit.sha, commands)
+    const args = ["commit-tree", treeResult.stdout.trim()]
+    if (previousNew) args.push("-p", previousNew)
+
+    const built = await runGitChecked({ repoPath, args, env: commitTreeEnv(commit, edit), stdin: message })
+    commands.push(built)
+    const newSha = built.stdout.trim()
+    if (edit) oldToNew[edit.sha] = newSha
+    previousNew = newSha
+  }
+
+  if (!previousNew) throw new Error("History edit produced no commits")
+  await updateHead(repoPath, previousNew, commands, "gitsurgeon: combined-history-edit")
+  return { commands, oldToNew }
+}
+
+async function commitMessage(repoPath: string, sha: string, commands: GitCommandResult[]): Promise<string> {
+  const result = await runGitChecked({ repoPath, args: ["log", "-1", "--format=%B", sha] })
+  commands.push(result)
+  return result.stdout
+}
+
+function commitTreeEnv(commit: CommitSummary, edit?: PlannedEdit): Record<string, string> {
+  const env = {
+    GIT_AUTHOR_NAME: commit.authorName,
+    GIT_AUTHOR_EMAIL: commit.authorEmail,
+    GIT_AUTHOR_DATE: commit.authorDate,
+    GIT_COMMITTER_NAME: commit.committerName,
+    GIT_COMMITTER_EMAIL: commit.committerEmail,
+    GIT_COMMITTER_DATE: commit.committerDate,
+  }
+  if (edit?.date && (edit.dateMode === "author" || edit.dateMode === "both")) env.GIT_AUTHOR_DATE = edit.date
+  if (edit?.date && (edit.dateMode === "committer" || edit.dateMode === "both")) env.GIT_COMMITTER_DATE = edit.date
+  return env
+}
+
+async function updateHead(repoPath: string, newHead: string, commands: GitCommandResult[], reason: string): Promise<void> {
+  const refResult = await runGitChecked({ repoPath, args: ["rev-parse", "--symbolic-full-name", "HEAD"] })
+  commands.push(refResult)
+  const headRef = refResult.stdout.trim()
+  const oldHeadResult = await runGitChecked({ repoPath, args: ["rev-parse", "HEAD"] })
+  commands.push(oldHeadResult)
+  const updateArgs = headRef && headRef !== "HEAD"
+    ? ["update-ref", "-m", reason, headRef, newHead, oldHeadResult.stdout.trim()]
+    : ["update-ref", "--no-deref", "-m", reason, "HEAD", newHead, oldHeadResult.stdout.trim()]
+  const update = await runGitChecked({ repoPath, args: updateArgs })
+  commands.push(update)
+  const reset = await runGitChecked({ repoPath, args: ["reset", "--hard", "HEAD"], timeoutMs: 120_000 })
+  commands.push(reset)
 }
 
 async function writePreviewLog(state: Awaited<ReturnType<typeof validateRepository>>, operationType: string, baseCommit: string | undefined, newHead: string, commands: string[]): Promise<string> {

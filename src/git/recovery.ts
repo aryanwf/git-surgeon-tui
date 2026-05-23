@@ -94,8 +94,12 @@ export async function pushBackupToUpstream(repoPath: string, backupRef: string, 
   const match = upstream.match(/^([^/]+)\/(.+)$/)
   if (!match) throw new Error(`Current branch has no pushable upstream: ${upstream}`)
   const [, remote, branch] = match
-  const result = await runGitChecked({ repoPath, args: ["push", "-f", remote, `${backupRef}:refs/heads/${branch}`] })
-  return (result.stdout || result.stderr).trim() || `Pushed ${backupRef} to ${upstream}`
+  const status = await runGitChecked({ repoPath, args: ["status", "--porcelain=v1"] })
+  if (status.stdout.trim() !== "") throw new Error("Backup apply blocked because the worktree or index is dirty")
+
+  await runGitChecked({ repoPath, args: ["reset", "--hard", backupRef] })
+  const result = await runGitChecked({ repoPath, args: ["push", "--force-with-lease", remote, `HEAD:refs/heads/${branch}`] })
+  return (result.stdout || result.stderr).trim() || `Reset local branch to ${backupRef} and pushed ${upstream}`
 }
 
 export async function previewBackupApplyToUpstream(repoPath: string, backupRef: string, upstream: string): Promise<BackupApplyPreview> {

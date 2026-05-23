@@ -23,7 +23,7 @@ export function RecoveryScreen(state: RepositoryState, report: RecoveryReport, s
     KeyHelp([
       ["↑/↓", "select backup"],
       ["c", "create branch"],
-      ["enter", previewMatchesSelection ? "apply previewed backup" : "preview remote apply"],
+      ["enter", previewMatchesSelection ? "reset local and push backup" : "preview backup apply"],
       ["e", "export latest report"],
       ["b / esc", "back to dashboard"],
     ]),

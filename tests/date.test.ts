@@ -60,6 +60,21 @@ test("applies committer date change while preserving selected author date", asyn
   expect(changed).toBe(`${oldAuthorDate}\x002026-05-20T10:30:00Z`)
 })
 
+test("changes one commit date without changing descendant metadata", async () => {
+  const { repoPath, commits } = await createFixtureRepo()
+  const oldDescendantMetadata = await commitDates(repoPath, commits[2], "%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI")
+
+  await changeOldCommitDate({
+    repoPath,
+    sha: commits[1],
+    date: "2026-05-20T10:30:00Z",
+    mode: "author",
+    apply: true,
+  })
+
+  expect(await commitDates(repoPath, "HEAD", "%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI")).toBe(oldDescendantMetadata)
+})
+
 test("changes the root commit date with --root rebase", async () => {
   const { repoPath, commits } = await createFixtureRepo()
 
